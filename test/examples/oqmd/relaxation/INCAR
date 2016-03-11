@@ -1,0 +1,37 @@
+#= General Settings =#
+  PREC = ACC
+  ISTART = 0
+ ISPIN = 2
+  MAGMOM = 1*0.0030 1*0.0010
+#= Parallelization =#
+
+#= Ionic Relaxation Settings =#
+  NSW = 60
+  IBRION = 2
+  ISIF = 3
+  POTIM = 0.5
+
+#= Electronic Relxation Settings =#
+  ENCUT = 249.8
+  NELM = 60
+  NELMIN = 5
+  LREAL = .FALSE.
+  EDIFF = 0.0001
+  ALGO = FAST
+
+#= Write flags =#
+  LCHARG = .TRUE.
+  LWAVE = .FALSE.
+  LVTOT = .FALSE.
+
+#= DOS =#
+  NBANDS = 18
+  ISMEAR = 1
+  SIGMA = 0.2
+
+#= Uncategorized/OQMD codes  =#
+  PSTRESS = 0
+  LORBIT = 11
+  EPSILON = 1
+  LDIPOL = .FALSE.
+  IDIPOL = 0

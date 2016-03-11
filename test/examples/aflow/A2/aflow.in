@@ -1,0 +1,132 @@
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW]                                                                               
+[AFLOW]                     .o.        .o88o. oooo                                    
+[AFLOW]                    .888.       888 `` `888                                    
+[AFLOW]                   .8'888.     o888oo   888   .ooooo.  oooo oooo    ooo        
+[AFLOW]                  .8' `888.     888     888  d88' `88b  `88. `88.  .8'         
+[AFLOW]                 .88ooo8888.    888     888  888   888   `88..]88..8'          
+[AFLOW]                .8'     `888.   888     888  888   888    `888'`888'           
+[AFLOW]               o88o     o8888o o888o   o888o `Y8bod8P'     `8'  `8'  .in       
+[AFLOW]                                                                               
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW] * Stefano Curtarolo - (aflow V30557) 
+[AFLOW] * Dane Morgan - Wahyu Setyawan - Gus Hart - Michal Jahnatek - Shidong Wang - Ohad Levy 
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW] Aflow automatically generated (aflow_avasp.cpp) 
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW]SYSTEM=Mg_pv.A2
+#[AFLOW] single element calculation
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW] input file for aflow 
+[AFLOW_MODE=VASP] 
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW_MODE_ZIP=bzip2] 
+[AFLOW_MODE_BINARY=vasp46s] 
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW] ************************************************************************************************************************** 
+#[AFLOW_MODE_MPI]
+[AFLOW_MODE_MPI_MODE]NCPUS=MAX 
+[AFLOW_MODE_MPI_MODE]COMMAND ="mpirun -np" 
+[AFLOW_MODE_MPI_MODE]AUTOTUNE 
+[AFLOW_MODE_MPI_MODE]BINARY="mpivasp46s" 
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW_SYMMETRY]CALC 
+#[AFLOW_SYMMETRY]SGROUP_WRITE 
+#[AFLOW_SYMMETRY]SGROUP_RADIUS=7.77 
+[AFLOW] ************************************************************************************************************************** 
+#[AFLOW_NEIGHBOURS]CALC 
+[AFLOW_NEIGHBOURS]RADIUS=7.7 
+[AFLOW_NEIGHBOURS]DRADIUS=0.1 
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW] # Phonons calculations are not implemented yet. They will be included in aflow4.
+#[AFLOW_PHONONS]CALC
+[AFLOW] ************************************************************************************************************************** 
+[VASP_RUN]RELAX_STATIC_BANDS=2                                     // GENERATE | STATIC | RELAX=N | RELAX_STATIC=N | STATIC_BANDS | RELAX_STATIC_BANDS=N | REPEAT_BANDS [,DS[,DD[,DSCF]]] 
+[VASP_FORCE_OPTION]NEGLECT_NOMIX 
+[VASP_FORCE_OPTION]KEEPK 
+#[VASP_FORCE_OPTION]KPOINTS=EVEN                      // EVEN | ODD (default none)
+#[VASP_FORCE_OPTION]KPOINTS_KSHIFT_GAMMA=EVEN         // EVEN | ODD (default none)
+#[VASP_FORCE_OPTION]KPOINTS_KSCHEME=MONKHORST_PACK    // MONKHORST_PACK | GAMMA (manual)
+#[VASP_FORCE_OPTION]KPOINTS_GAMMA 
+#[VASP_FORCE_OPTION]KPOINTS_IBZKPT 
+[VASP_FORCE_OPTION]SYM=ON                             // ON | OFF  (default ON)
+#[VASP_FORCE_OPTION]AUTO_PSEUDOPOTENTIALS=pot_GGA     // pot_LDA | pot_GGA | potpaw_LDA | potpaw_GGA | potpaw_PBE 
+[VASP_FORCE_OPTION]NBANDS                             // Estimate Bands (better than VASP)
+#[VASP_FORCE_OPTION]SPIN=ON,REMOVE_RELAX_1             // (ON | OFF  (default ON)), REMOVE_RELAX_1 | _2
+#[VASP_FORCE_OPTION]AUTO_MAGMOM=ON                    // ON | OFF (default OFF)
+[VASP_FORCE_OPTION]RELAX_MODE=ENERGY                  // ENERGY | FORCES | ENERGY_FORCES | FORCES_ENERGY (default ENERGY) 
+[VASP_FORCE_OPTION]PREC=ACCURATE                      // (LOW | MEDIUM | NORMAL | HIGH | ACCURATE), PRESERVED (default=MEDIUM)
+[VASP_FORCE_OPTION]ALGO=NORMAL                        // (NORMAL | VERYFAST | FAST | ALL | DAMPED), PRESERVED (default=NORMAL)
+[VASP_FORCE_OPTION]RELAX 
+#[VASP_FORCE_OPTION]NOTUNE 
+[VASP_FORCE_OPTION]TYPE=DEFAULT                       // METAL | INSULATOR | SEMICONDUCTOR | DEFAULT (default DEFAULT) 
+[VASP_FORCE_OPTION]CONVERT_UNIT_CELL=SPRIM,MINK       // SPRIM, SCONV, NIGGLI, MINK, INCELL, INCOMPACT, WS, CART, FRAC, PRES 
+#[VASP_FORCE_OPTION]VOLUME+=10.0 
+#[VASP_FORCE_OPTION]VOLUME*=1.05 
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW] ************************************************************************************************************************** 
+[VASP_INCAR_MODE_EXPLICIT]START 
+SYSTEM=Mg_pv.A2
+#NBANDS=XX                                            # for hand modification
+#IALGO=48                                             # for hand modification
+[VASP_INCAR_MODE_EXPLICIT]STOP 
+[AFLOW] ************************************************************************************************************************** 
+[VASP_KPOINTS_MODE_IMPLICIT] 
+[VASP_KPOINTS_FILE]KSCHEME=M 
+[VASP_KPOINTS_FILE]KPPRA=32768
+[VASP_KPOINTS_FILE]STATIC_KSCHEME=M 
+[VASP_KPOINTS_FILE]STATIC_KPPRA=32768
+[VASP_KPOINTS_FILE]BANDS_LATTICE=AUTO
+[VASP_KPOINTS_FILE]BANDS_GRID=128
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW] ************************************************************************************************************************** 
+[VASP_POSCAR_MODE_EXPLICIT]START 
+Mg_pvMg_pv/59 - (A2) - BCC [A] (59)  (htqc library) 
+-22.817800
+   0.50000000000000  -0.50000000000000  -0.50000000000000
+  -0.50000000000000  -0.50000000000000   0.50000000000000
+  -0.50000000000000   0.50000000000000  -0.50000000000000
+1 
+Direct(1) [A1] 
+   0.00000000000000   0.00000000000000   0.00000000000000  Mg_pv 
+[VASP_POSCAR_MODE_EXPLICIT]STOP 
+[AFLOW] ************************************************************************************************************************** 
+[VASP_POTCAR_MODE_IMPLICIT] 
+[VASP_POTCAR_FILE]pot_GGA/Mg_pv
+[AFLOW] COMPOSITION_PP=|Mg_pv1|
+[AFLOW] COMPOSITION=|Mg1|
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW] Aflow automatically generated (aflow_avasp.cpp) 
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW] aflow/aconvasp/apennsy v(30557) in ./AFLOWDATA/Mg_pv:GGA:01Apr2000/A2
+[AFLOW] ************************************************************************************************************************** 
+[AFLOW] SELF-MODIFICATION 
+[AFLOW] Recycling CONTCAR of relax1 
+[AFLOW] ************************************************************************************************************************** 
+[VASP_POSCAR_MODE_EXPLICIT]START
+Mg_pvMg_pv/59 - (A2) - BCC [A] (59)  (ht
+1.016396
+  -1.75732353630991   1.75732353630991   1.75732353630991
+   1.75732353630991  -1.75732353630991   1.75732353630991
+   1.75732353630991   1.75732353630991  -1.75732353630991
+1 
+Direct(1) [A1] 
+   -0.00000000000000   -0.00000000000000   -0.00000000000000 
+[VASP_POSCAR_MODE_EXPLICIT]STOP
+[AFLOW] ************************************************************************************************************************** 
+[VASP_FORCE_OPTION]SPIN=OFF      // Self Correction
+[AFLOW] SELF-MODIFICATION 
+[AFLOW] Recycling CONTCAR of relax2 
+[AFLOW] ************************************************************************************************************************** 
+[VASP_POSCAR_MODE_EXPLICIT]START
+Mg_pvMg_pv/59 - (A2) - BCC [A] (59)  (ht
+1.016396
+  -1.75678892224291   1.75678892224291   1.75678892224291
+   1.75678892224291  -1.75678892224291   1.75678892224291
+   1.75678892224291   1.75678892224291  -1.75678892224291
+1 
+Direct(1) [A1] 
+   -0.00000000000000   -0.00000000000000   0.00000000000000 
+[VASP_POSCAR_MODE_EXPLICIT]STOP
+[AFLOW] ************************************************************************************************************************** 
