@@ -43,9 +43,11 @@ class VasprunContext(object):
         self.bands = None
         self.kpoints = None
         self.weights = None
+        self.ispin = None
+        self.lastSystemDescription = None
 
     sectionMap = {
-        "model": ["section_run", "section_method"],
+        "modeling": ["section_run", "section_method"],
         "structure": ["section_system_description"],
         "calculation": ["single_configuration_calculation"]
     }
@@ -54,6 +56,7 @@ class VasprunContext(object):
         self.parser = parser
 
     def onEnd_generator(self, parser, event, element):
+        backend = parser.backend
         program_name = g(element, "i/[@name='name']")
         if program_name:
             backend.addValue("program_name", program_name)
@@ -75,6 +78,7 @@ class VasprunContext(object):
                 backend.pwarn("unexpected tag %s %s %r in generator" % (i.tag, i.attrib, i.text))
 
     def onEnd_incar(self, parser, event, element):
+        backend = parser.backend
         metaEnv = parser.backend.metaInfoEnv()
         for el in element:
             if (el.tag != "i"):
@@ -121,8 +125,12 @@ class VasprunContext(object):
                                 backend.openNonOverlappingSection("section_XC_functionals")
                                 backend.addValue("XC_functional_name", f)
                                 backend.closeNonOverlappingSection("section_XC_functionals")
+                    elif name == "ISPIN":
+                        self.ispin = int(el.text.strip())
+
 
     def onEnd_kpoints(self, parser, event, element):
+        backend = parser.backend
         self.bands = None
         self.kpoints = None
         self.weights = None
@@ -153,6 +161,9 @@ class VasprunContext(object):
 
 
     def onEnd_structure(self, parser, event, element):
+        backend = parser.backend
+        gIndexes = parser.tagSections["/".join(map(lambda x: x.tag, parser.path[:])) + "/" + element.tag]
+        self.lastSystemDescription = gIndexes["section_system_description"]
         for el in element:
             if (el.tag == "crystal"):
                 cell = None
@@ -182,7 +193,10 @@ class VasprunContext(object):
                 backend.pwarn("Unexpected tag in structure %s %s %r" % el.tag, el.attrib, el.text)
 
     def onEnd_eigenvalues(self, parser, event, element):
+        backend = parser.backend
         eConv = convert_unit_function("eV", "J")
+        eigenvalues = None
+        occupation = None
         for el in element:
             if el.tag == "array":
                 for arrEl in el:
@@ -191,14 +205,79 @@ class VasprunContext(object):
                     elif arrEl.tag == "field":
                         pass
                     elif arrEl.tag == "set":
+                        ik = -1
+                        isp = -1
                         for spinEl in arrEl:
                             if spinEl.tag == "set":
+                                isp += 1
                                 for kEl in spinEl:
                                     if kEl.tag == "set":
+                                        ik += 1
                                         bands = np.asarray(getVector(kEl, field = "r"))
+                                        if eigenvalues is None:
+                                            eigenvalues = np.zeros((self.ispin, self.kpoints.shape[0],  bands.shape[0]), dtype = float)
+                                            occupation = np.zeros((self.ispin, self.kpoints.shape[0],  bands.shape[0]), dtype = float)
+                                        eigenvalues[isp, ik] = bands[:,0]
+                                        occupation[isp, ik] = bands[:,1]
+                                    else:
+                                        backend.pwarn("unexpected tag %s in k array of the eigenvalues" % kEl.tag)
+                            else:
+                                backend.pwarn("unexpected tag %s in spin array of the eigenvalues" % spinEl.tag)
+                    else:
+                        backend.pwarn("unexpected tag %s in array of the eigenvalues" % arrEl.tag)
+                if eigenvalues is not None:
+                    ev = map(eConv, eigenvalues)
+                    if self.bands:
+                        divisions = int(self.bands['divisions'])
+                        backend.openNonOverlappingSection("section_k_band")
+                        backend.addArrayValues("band_energies", np.reshape(ev, (self.kpoints.shape[0]/divisions, self.ispin, divisions ,  bands.shape[0])))
+                        backend.closeNonOverlappingSection("section_k_band")
+                    else:
+                        backend.openNonOverlappingSection("section_eigenvalues_group")
+                        for isp in range(self.ispin):
+                            backend.openNonOverlappingSection("section_eigenvalues")
+                            backend.addArrayValues("eigenvalues_eigenvalues", ev[isp])
+                            backend.closeNonOverlappingSection("section_eigenvalues")
+                        backend.closeNonOverlappingSection("section_eigenvalues_group")
+
+            else:
+                backend.pwarn("unexpected tag %s in the eigenvalues" % el.tag)
+
+    def onEnd_scstep(self, parser, event, element):
+        pass
 
     def onEnd_calculation(self, parser, event, element):
-        pass
+        eConv = convert_unit_function("eV", "J")
+        fConv = convert_unit_function("eV/angstrom", "N")
+        pConv = convert_unit_function("eV/angstrom^3", "Pa")
+        backend = parser.backend
+        backend.addValue("single_configuration_calculation_to_system_description_ref", self.lastSystemDescription)
+        gIndexes = parser.tagSections["/modeling"]
+        backend.addValue("single_configuration_to_calculation_method_ref", gIndexes["section_method"])
+        for el in element:
+            if el.tag == "energy":
+                for enEl in el:
+                    if enEl.tag == "i":
+                        name = enEl.attrib.get("name", None)
+                        if name == "e_fr_energy":
+                            value = eConv(float(enEl.text.strip()))
+                            backend.addValue("energy_free", value)
+                        elif name == "e_wo_entr":
+                            value = eConv(float(enEl.text.strip()))
+                            backend.addValue("energy_total", value)
+                        elif name == "e_0_energy":
+                            value = eConv(float(enEl.text.strip()))
+                            backend.addValue("energy_total_T0", value)
+                        else:
+                            backend.pwarn("Unexpected i tag with name %s in energy section" % name)
+                    elif enEl.tag == "varray":
+                        name = enEl.attrib.get("name", None)
+                        if name == "forces":
+                            f = getVector(enEl, lambda x: fConv(float(x)))
+                            backend.addValue("atom_forces", f)
+                        elif name == 'stress':
+                            f = getVector(enEl, lambda x: pConv(float(x)))
+                            backend.addValue("stress_tensor", f)
 
 class XmlParser(object):
     @staticmethod
