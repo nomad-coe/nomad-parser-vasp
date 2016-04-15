@@ -17,3 +17,16 @@ object VaspParserSpec extends Specification {
     }
   }
 }
+
+object VaspRunParserSpec extends Specification {
+  "VaspRunParserTest" >> {
+    "test with Al.out" >> {
+      "test with json-events" >> {
+        ParserRun.parse(VaspParser, "test/examples/oqmd/relaxation/vasprun.xml", "json-events") must_== ParseResult.ParseSuccess
+      }
+      "test with json" >> {
+        ParserRun.parse(VaspParser, "test/examples/oqmd/relaxation/vasprun.xml", "json") must_== ParseResult.ParseSuccess
+      }
+    }
+  }
+}
