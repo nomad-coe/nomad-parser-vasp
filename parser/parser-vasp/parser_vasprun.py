@@ -50,7 +50,7 @@ class VasprunContext(object):
     sectionMap = {
         "modeling": ["section_run", "section_method"],
         "structure": ["section_system_description"],
-        "calculation": ["single_configuration_calculation"]
+        "calculation": ["section_single_configuration_calculation"]
     }
 
     def startedParsing(self, parser):
@@ -264,7 +264,7 @@ class VasprunContext(object):
                         if name == "e_fr_energy":
                             value = eConv(float(enEl.text.strip()))
                             backend.addValue("energy_free", value)
-                        elif name == "e_wo_entr":
+                        elif name == "e_wo_entrp":
                             value = eConv(float(enEl.text.strip()))
                             backend.addValue("energy_total", value)
                         elif name == "e_0_energy":
@@ -372,7 +372,7 @@ class XmlParser(object):
         else:
             backend.finishedParsingSession(
                 parserStatus = "ParseSuccess",
-                parserErrors = []
+                parserErrors = None
             )
 
 g = XmlParser.maybeGet
