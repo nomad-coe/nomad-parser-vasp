@@ -1,6 +1,7 @@
 import xml.etree.ElementTree
 import logging, sys
-import setup_paths, dateutil.parser, datetime
+import setup_paths
+from datetime import datetime
 import os, logging, re
 from nomadcore.utils import goInteractive
 from nomadcore.parser_backend import JsonParseEventsWriterBackend
@@ -10,7 +11,7 @@ import setup_paths
 from nomadcore.unit_conversion.unit_conversion import convert_unit_function
 
 def secondsFromEpoch(date):
-    epoch = datetime.datetime(1970,1,1)
+    epoch = datetime(1970,1,1)
     ts=date-epoch
     return ts.seconds + ts.microseconds/1000.0
 
@@ -68,10 +69,11 @@ class VasprunContext(object):
         date = g(element, "i/[@name='date']")
         pdate = None
         time = g(element, "i/[@name='time']")
-        if date and time:
-            date = date + " " + time
         if date:
-            pdate = dateutil.parser.parse(date, yearfirst=True)
+            pdate = datetime.strptime(date, "%Y %m %d")
+        if pdate and time:
+            pdate = datetime.combine(pdate.date(), datetime.strptime(time, "%H:%M:%S").timetz())
+        if pdate:
             backend.addValue("program_compilation_datetime", secondsFromEpoch(pdate))
         for i in element:
             if i.tag != "i" or not i.attrib.get("name") in set(["name", "version", "subversion", "platform", "program_version", "date", "time"]):
