@@ -25,6 +25,7 @@ object VaspParser extends SimpleExternalParserGenerator(
   resList = Seq(
     "parser-vasp/parser_vasp.py",
     "parser-vasp/setup_paths.py",
+    "nomad_meta_info/public.nomadmetainfo.json",
     "nomad_meta_info/common.nomadmetainfo.json",
     "nomad_meta_info/meta_types.nomadmetainfo.json",
     "nomad_meta_info/vasp.nomadmetainfo.json"
@@ -60,6 +61,7 @@ object VaspRunParser extends SimpleExternalParserGenerator(
   resList = Seq(
     "parser-vasp/parser_vasprun.py",
     "parser-vasp/setup_paths.py",
+    "nomad_meta_info/public.nomadmetainfo.json",
     "nomad_meta_info/common.nomadmetainfo.json",
     "nomad_meta_info/meta_types.nomadmetainfo.json",
     "nomad_meta_info/vasp.nomadmetainfo.json"
