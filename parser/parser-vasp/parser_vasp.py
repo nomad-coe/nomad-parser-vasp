@@ -12,14 +12,14 @@ mainFileDescription = SM(
     startReStr = "",
     subMatchers = [
         SM(name = 'newRun',
-           startReStr = r"^\s*vasp.(?P<program_version>[0-9.]+)\s+(?P<vasp_src_date>[0-9]+[A-Za-z]+[0-9]+)\s+\(build (?P<vasp_build_date>[^)]+)\)\s+complex\s*",
+           startReStr = r"^\s*vasp.(?:[0-9.]+)\s+(?:[0-9]+[A-Za-z]+[0-9]+)\s+\(build (:[^)]+)\)\s+complex\s*",
            repeats = True,
            required = True,
            forwardMatch = True,
            sections   = ['section_run','section_method'],
            subMatchers = [
                SM(name = 'header',
-                  startReStr = r"^\s*vasp.(?P<program_version>[0-9.]+)\s+(?P<vasp_src_date>[0-9]+[A-Za-z]+[0-9]+)\s+\(build (?P<vasp_build_date>[^)]+)\)\s+complex\s*"
+                  startReStr = r"^\s*vasp.(?P<program_version>[0-9.]+)\s+(?P<vasp_src_date>[0-9]+[A-Za-z]+[0-9]+)\s+\(build (?P<vasp_build_date>[^)]+)\)\s+complex\s*",
                   subMatchers = [
                       ]
               ),
