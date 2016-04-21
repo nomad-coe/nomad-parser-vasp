@@ -58,7 +58,7 @@ class VasprunContext(object):
 
     def onEnd_generator(self, parser, event, element):
         backend = parser.backend
-        program_name = g(element, "i/[@name='name']")
+        program_name = g(element, "i/[@name='program']")
         if program_name:
             backend.addValue("program_name", program_name)
         version = (g(element, "i/[@name='version']", "") + " " +
@@ -280,6 +280,43 @@ class VasprunContext(object):
                         elif name == 'stress':
                             f = getVector(enEl, lambda x: pConv(float(x)))
                             backend.addValue("stress_tensor", f)
+
+    def onEnd_atominfo(self, parser, event, element):
+        nAtoms = None
+        nAtomTypes = None
+        atomTypes = []
+        labels = []
+        for el in element:
+            if el.tag == "atoms":
+                nAtoms = int(el.text.strip())
+            elif el.tag == "types":
+                nAtomTypes = int(el.text.strip())
+            elif el.tag == "array":
+                name = el.attrib.get("name", None)
+                if name == "atoms":
+                    for atomsEl in el:
+                        if atomsEl.tag == "dimension":
+                            pass
+                        elif atomsEl.tag == "field":
+                            pass
+                        elif atomsEl.tag == "set":
+                            for atomsLine in atomsEl:
+                                if atomsLine.tag != "rc":
+                                    backend.pwarn("unexpected tag %s in atoms array in atominfo" % atomsLine.tag)
+                                else:
+                                    line = atomsLine.findall("c")
+                                    labels.append(line[0].text.strip())
+                                    atomTypes.append(int(line[1].text.strip()))
+                        else:
+                            backend.pwarn("unexpected tag %s in atoms array in atominfo" % atomsEl.tag)
+                elif name == "atomtypes":
+                    pass
+                else:
+                    backend.pwarn("unexpected array named %s in atominfo" % name)
+            else:
+                backend.pwarn("unexpected tag %s in atominfo" % el.tag)
+        if labels:
+            backend.addValue("atom_label", labels)
 
 class XmlParser(object):
     @staticmethod
