@@ -70,6 +70,7 @@ class VasprunContext(object):
         self.weights = None
         self.ispin = None
         self.lastSystemDescription = None
+        self.labels = None
 
     sectionMap = {
         "modeling": ["section_run", "section_method"],
@@ -217,6 +218,9 @@ class VasprunContext(object):
                     backend.pwarn("Unexpected varray in structure %s" % el.attrib)
             else:
                 backend.pwarn("Unexpected tag in structure %s %s %r" % el.tag, el.attrib, el.text)
+        if self.labels is not Null:
+            backend.addValue("atom_label", self.labels)
+
 
     def onEnd_eigenvalues(self, parser, event, element):
         backend = parser.backend
@@ -370,9 +374,7 @@ class VasprunContext(object):
                         backend.pwarn("unexpected array named %s in atominfo" % name)
             else:
                 backend.pwarn("unexpected tag %s in atominfo" % el.tag)
-        if labels:
-            backend.addValue("atom_label", labels)
-
+        self.labels = np.asarray(labels)
     def incarOutTag(self, el):
         backend = parser.backend
         metaEnv = parser.backend.metaInfoEnv()
