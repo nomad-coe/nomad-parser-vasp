@@ -3,7 +3,6 @@ import logging, sys
 import setup_paths
 from datetime import datetime
 import os, logging, re
-from nomadcore.utils import goInteractive
 from nomadcore.parser_backend import JsonParseEventsWriterBackend
 from nomadcore.local_meta_info import loadJsonFile, InfoKindEl
 import numpy as np
@@ -51,7 +50,6 @@ class MyXMLParser(ET.XMLParser):
             if not(num in (0x9, 0xA, 0xD) or 0x20 <= num <= 0xD7FF
                    or 0xE000 <= num <= 0xFFFD or 0x10000 <= num <= 0x10FFFF):
                 # is invalid xml character, cut it out of the stream
-                print 'removing %s' % m.group()
                 mstart, mend = m.span()
                 mydata = data[:mstart] + data[mend:]
         else:
