@@ -218,7 +218,7 @@ class VasprunContext(object):
                     backend.pwarn("Unexpected varray in structure %s" % el.attrib)
             else:
                 backend.pwarn("Unexpected tag in structure %s %s %r" % el.tag, el.attrib, el.text)
-        if self.labels is not Null:
+        if self.labels is not None:
             backend.addValue("atom_label", self.labels)
 
 
