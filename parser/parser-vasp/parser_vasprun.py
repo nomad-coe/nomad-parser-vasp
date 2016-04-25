@@ -219,7 +219,7 @@ class VasprunContext(object):
             else:
                 backend.pwarn("Unexpected tag in structure %s %s %r" % el.tag, el.attrib, el.text)
         if self.labels is not None:
-            backend.addValue("atom_label", self.labels)
+            backend.addArrayValues("atom_label", self.labels)
 
 
     def onEnd_eigenvalues(self, parser, event, element):
