@@ -235,10 +235,10 @@ class VasprunContext(object):
                     elif arrEl.tag == "field":
                         pass
                     elif arrEl.tag == "set":
-                        ik = -1
                         isp = -1
                         for spinEl in arrEl:
                             if spinEl.tag == "set":
+                                ik = -1
                                 isp += 1
                                 for kEl in spinEl:
                                     if kEl.tag == "set":
