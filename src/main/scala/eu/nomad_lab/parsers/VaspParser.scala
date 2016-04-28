@@ -10,7 +10,9 @@ object VaspParser extends SimpleExternalParserGenerator(
     ("name" -> jn.JString("VaspParser")) ::
       ("parserId" -> jn.JString("VaspParser" + lab.VaspVersionInfo.version)) ::
       ("versionInfo" -> jn.JObject(
-        ("nomadCoreVersion" -> jn.JString(lab.NomadCoreVersionInfo.version)) ::
+        ("nomadCoreVersion" -> jn.JObject(lab.NomadCoreVersionInfo.toMap.map {
+          case (k, v) => k -> jn.JString(v.toString)
+        }(breakOut): List[(String, jn.JString)])) ::
           (lab.VaspVersionInfo.toMap.map {
             case (key, value) =>
               (key -> jn.JString(value.toString))
@@ -43,7 +45,9 @@ object VaspRunParser extends SimpleExternalParserGenerator(
     ("name" -> jn.JString("VaspRunParser")) ::
       ("parserId" -> jn.JString("VaspRunParser" + lab.VaspVersionInfo.version)) ::
       ("versionInfo" -> jn.JObject(
-        ("nomadCoreVersion" -> jn.JString(lab.NomadCoreVersionInfo.version)) ::
+        ("nomadCoreVersion" -> jn.JObject(lab.NomadCoreVersionInfo.toMap.map {
+          case (k, v) => k -> jn.JString(v.toString)
+        }(breakOut): List[(String, jn.JString)])) ::
           (lab.VaspVersionInfo.toMap.map {
             case (key, value) =>
               (key -> jn.JString(value.toString))
