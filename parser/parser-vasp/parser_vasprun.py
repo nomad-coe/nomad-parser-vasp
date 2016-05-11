@@ -200,6 +200,7 @@ class VasprunContext(object):
                         if name == "basis":
                             conv = convert_unit_function("angstrom","m")
                             cell = getVector(cellEl, lambda x: conv(float(x)))
+                            backend.addArrayValues("simulation_cell", np.asarray(cell))
                         elif name =="rec_basis":
                             pass
                         else:
