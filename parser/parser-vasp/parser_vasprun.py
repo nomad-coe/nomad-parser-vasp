@@ -201,6 +201,7 @@ class VasprunContext(object):
                             conv = convert_unit_function("angstrom","m")
                             cell = getVector(cellEl, lambda x: conv(float(x)))
                             backend.addArrayValues("simulation_cell", np.asarray(cell))
+                            backend.addArrayValues("configuration_periodic_dimensions", np.ones(3, dtype=bool))
                         elif name =="rec_basis":
                             pass
                         else:
