@@ -215,13 +215,13 @@ class VasprunContext(object):
                 name = el.attrib.get("name", None)
                 if name == "positions":
                     pos = getVector(el)
-                    backend.addArrayValues("atom_position", np.asarray(pos))
+                    backend.addArrayValues("atom_positions", np.asarray(pos))
                 else:
                     backend.pwarn("Unexpected varray in structure %s" % el.attrib)
             else:
                 backend.pwarn("Unexpected tag in structure %s %s %r" % el.tag, el.attrib, el.text)
         if self.labels is not None:
-            backend.addArrayValues("atom_label", self.labels)
+            backend.addArrayValues("atom_labels", self.labels)
 
 
     def onEnd_eigenvalues(self, parser, event, element):
@@ -268,7 +268,7 @@ class VasprunContext(object):
                         backend.openNonOverlappingSection("section_eigenvalues_group")
                         for isp in range(self.ispin):
                             backend.openNonOverlappingSection("section_eigenvalues")
-                            backend.addArrayValues("eigenvalues_eigenvalues", ev[isp])
+                            backend.addArrayValues("eigenvalues_values", ev[isp])
                             backend.closeNonOverlappingSection("section_eigenvalues")
                         backend.closeNonOverlappingSection("section_eigenvalues_group")
 
