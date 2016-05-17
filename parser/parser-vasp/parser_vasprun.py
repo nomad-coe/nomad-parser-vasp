@@ -74,7 +74,7 @@ class VasprunContext(object):
 
     sectionMap = {
         "modeling": ["section_run", "section_method"],
-        "structure": ["section_system_description"],
+        "structure": ["section_system"],
         "calculation": ["section_single_configuration_calculation"]
     }
 
@@ -190,7 +190,7 @@ class VasprunContext(object):
     def onEnd_structure(self, parser, event, element):
         backend = parser.backend
         gIndexes = parser.tagSections["/".join(map(lambda x: x.tag, parser.path[:])) + "/" + element.tag]
-        self.lastSystemDescription = gIndexes["section_system_description"]
+        self.lastSystemDescription = gIndexes["section_system"]
         for el in element:
             if (el.tag == "crystal"):
                 cell = None
