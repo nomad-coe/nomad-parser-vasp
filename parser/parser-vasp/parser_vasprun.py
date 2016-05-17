@@ -262,7 +262,18 @@ class VasprunContext(object):
                     if self.bands:
                         divisions = int(self.bands['divisions'])
                         backend.openNonOverlappingSection("section_k_band")
-                        backend.addArrayValues("band_energies", np.reshape(ev, (self.ispin, self.kpoints.shape[0]/divisions, divisions ,  bands.shape[0])))
+                        nsegments = self.kpoints.shape[0]/divisions
+                        kpt = np.reshape(self.kpoints, (nsegments, divisions, 3))
+                        energies = np.reshape(ev, (self.ispin, nsegments, divisions ,  bands.shape[0]))
+                        occ = np.reshape(occupation, (self.ispin, nsegments, divisions, bands.shape[0]))
+                        for isegment in range(nsegments):
+                            backend.openNonOverlappingSection("section_k_band_segment")
+                            backend.addArrayValues("band_energies", energies[:, isegment, :, :])
+                            backend.addArrayValues("band_occupations", occ[:, isegment, :, :])
+                            backend.addArrayValues("band_k_points", kpt[isegment])
+                            # "band_segm_labels"
+                            backend.addArrayValues("band_segm_start_end", np.asarray([kpt[isegment, 0], kpt[isegment, divisions - 1]]))
+                            backend.closeNonOverlappingSection("section_k_band_segment")
                         backend.closeNonOverlappingSection("section_k_band")
                     else:
                         backend.openNonOverlappingSection("section_eigenvalues_group")
@@ -283,7 +294,7 @@ class VasprunContext(object):
         fConv = convert_unit_function("eV/angstrom", "N")
         pConv = convert_unit_function("eV/angstrom^3", "Pa")
         backend = parser.backend
-        backend.addValue("single_configuration_calculation_to_system_description_ref", self.lastSystemDescription)
+        backend.addValue("single_configuration_calculation_to_system_ref", self.lastSystemDescription)
         gIndexes = parser.tagSections["/modeling"]
         backend.addValue("single_configuration_to_calculation_method_ref", gIndexes["section_method"])
         for el in element:
