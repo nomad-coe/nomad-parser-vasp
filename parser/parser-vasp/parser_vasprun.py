@@ -107,6 +107,7 @@ class VasprunContext(object):
     def onEnd_incar(self, parser, event, element):
         backend = parser.backend
         metaEnv = parser.backend.metaInfoEnv()
+        dft_plus_u = False
         for el in element:
             if (el.tag != "i"):
                 backend.pwarn("unexpected tag %s %s %r in incar" % (el.tag, el.attrib, el.text))
@@ -154,6 +155,13 @@ class VasprunContext(object):
                                 backend.closeNonOverlappingSection("section_XC_functionals")
                     elif name == "ISPIN":
                         self.ispin = int(el.text.strip())
+                    elif name == "LDAU":
+                        if re.match(".?[Tt](?:[rR][uU][eE])?.?|[yY](?:[eE][sS])?|1", el.text.strip()):
+                            dft_plus_u = True
+        if dft_plus_u:
+            backend.addValue("electronic_structure_method", "DFT+U")
+        else:
+            backend.addValue("electronic_structure_method", "DFT")
 
 
     def onEnd_kpoints(self, parser, event, element):
