@@ -284,13 +284,9 @@ class VasprunContext(object):
                             backend.closeNonOverlappingSection("section_k_band_segment")
                         backend.closeNonOverlappingSection("section_k_band")
                     else:
-                        backend.openNonOverlappingSection("section_eigenvalues_group")
-                        for isp in range(self.ispin):
-                            backend.openNonOverlappingSection("section_eigenvalues")
-                            backend.addArrayValues("eigenvalues_values", ev[isp])
-                            backend.closeNonOverlappingSection("section_eigenvalues")
-                        backend.closeNonOverlappingSection("section_eigenvalues_group")
-
+                        backend.openNonOverlappingSection("section_eigenvalues")
+                        backend.addArrayValues("eigenvalues_values", ev)
+                        backend.closeNonOverlappingSection("section_eigenvalues")
             else:
                 backend.pwarn("unexpected tag %s in the eigenvalues" % el.tag)
 
