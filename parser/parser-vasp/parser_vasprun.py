@@ -285,7 +285,7 @@ class VasprunContext(object):
                         backend.closeNonOverlappingSection("section_k_band")
                     else:
                         backend.openNonOverlappingSection("section_eigenvalues")
-                        backend.addArrayValues("eigenvalues_values", ev)
+                        backend.addArrayValues("eigenvalues_values", np.asarray(ev))
                         backend.closeNonOverlappingSection("section_eigenvalues")
             else:
                 backend.pwarn("unexpected tag %s in the eigenvalues" % el.tag)
