@@ -95,9 +95,9 @@ class VasprunContext(object):
         pdate = None
         time = g(element, "i/[@name='time']")
         if date:
-            pdate = datetime.strptime(date, "%Y %m %d")
+            pdate = datetime.strptime(date.strip(), "%Y %m %d")
         if pdate and time:
-            pdate = datetime.combine(pdate.date(), datetime.strptime(time, "%H:%M:%S").timetz())
+            pdate = datetime.combine(pdate.date(), datetime.strptime(time.strip(), "%H:%M:%S").timetz())
         if pdate:
             backend.addValue("program_compilation_datetime", secondsFromEpoch(pdate))
         for i in element:
