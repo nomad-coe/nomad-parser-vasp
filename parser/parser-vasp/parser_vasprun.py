@@ -551,7 +551,7 @@ class XmlParser(object):
             logging.exception("failure when parsing %s", self.mainFileUri)
             backend.finishedParsingSession(
                 parserStatus = "ParseFailure",
-                parserErrors = ["exception: %s" % sys.exc_value]
+                parserErrors = ["exception: %s" % sys.exc_info()[1]]
             )
         else:
             backend.finishedParsingSession(
