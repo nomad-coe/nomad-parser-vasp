@@ -1,3 +1,7 @@
+from __future__ import division
+from builtins import map
+from builtins import range
+from builtins import object
 import xml.etree.ElementTree
 import logging, sys
 import setup_paths
@@ -60,7 +64,7 @@ class MyXMLParser(ET.XMLParser):
 def getVector(el, transform = float, field = "v"):
     """ returns the vasp style vector contained in the element el (using field v).
     single elements are converted using the function convert"""
-    return map(lambda x: map(transform, re.split(r"\s+", x.text.strip())), el.findall(field))
+    return [[transform(y) for y in re.split(r"\s+", x.text.strip())] for x in el.findall(field)]
 
 class VasprunContext(object):
     def __init__(self):
@@ -135,7 +139,7 @@ class VasprunContext(object):
                             backend.pwarn("could not find converter for dtypeStr %s when handling meta info %s" % (dtypeStr, ))
                         elif shape:
                             vals = re.split("\s+", el.text.strip())
-                            backend.addValue(meta["name"], map(converter, vals))
+                            backend.addValue(meta["name"], [converter(x) for x in vals])
                         else:
                             backend.addValue(meta["name"], converter(el.text))
                     if name == 'GGA':
@@ -197,7 +201,7 @@ class VasprunContext(object):
 
     def onEnd_structure(self, parser, event, element):
         backend = parser.backend
-        gIndexes = parser.tagSections["/".join(map(lambda x: x.tag, parser.path[:])) + "/" + element.tag]
+        gIndexes = parser.tagSections["/".join([x.tag for x in parser.path[:]]) + "/" + element.tag]
         self.lastSystemDescription = gIndexes["section_system"]
         for el in element:
             if (el.tag == "crystal"):
@@ -266,11 +270,11 @@ class VasprunContext(object):
                     else:
                         backend.pwarn("unexpected tag %s in array of the eigenvalues" % arrEl.tag)
                 if eigenvalues is not None:
-                    ev = map(eConv, eigenvalues)
+                    ev = [eConv(x) for x in eigenvalues]
                     if self.bands:
                         divisions = int(self.bands['divisions'])
                         backend.openNonOverlappingSection("section_k_band")
-                        nsegments = self.kpoints.shape[0]/divisions
+                        nsegments = self.kpoints.shape[0] // divisions
                         kpt = np.reshape(self.kpoints, (nsegments, divisions, 3))
                         energies = np.reshape(ev, (self.ispin, nsegments, divisions ,  bands.shape[0]))
                         occ = np.reshape(occupation, (self.ispin, nsegments, divisions, bands.shape[0]))
@@ -421,7 +425,7 @@ class VasprunContext(object):
                         backend.pwarn("could not find converter for dtypeStr %s when handling meta info %s" % (dtypeStr, ))
                     elif shape:
                         vals = re.split("\s+", el.text.strip())
-                        backend.addValue(meta["name"], map(converter, vals))
+                        backend.addValue(meta["name"], [converter(x) for x in vals])
                     else:
                         backend.addValue(meta["name"], converter(el.text))
                 if name == 'GGA':
@@ -513,7 +517,7 @@ class XmlParser(object):
                 if event == 'start':
                     sectionsToOpen = self.sectionMap.get(el.tag, None)
                     if sectionsToOpen:
-                        pathStr = "/".join(map(lambda x: x.tag, self.path)) + "/" + el.tag
+                        pathStr = "/".join([x.tag for x in self.path]) + "/" + el.tag
                         gIndexes = {}
                         for sect in sectionsToOpen:
                             gIndexes[sect] = backend.openSection(sect)
@@ -539,7 +543,7 @@ class XmlParser(object):
                         self.path[-1].remove(el)
                     sectionsToClose = self.sectionMap.get(tag, None)
                     if sectionsToClose:
-                        pathStr = "/".join(map(lambda x: x.tag, self.path)) + "/" + tag
+                        pathStr = "/".join([x.tag for x in self.path]) + "/" + tag
                         gIndexes = self.tagSections[pathStr]
                         del self.tagSections[pathStr]
                         for sect in reversed(sectionsToClose):
