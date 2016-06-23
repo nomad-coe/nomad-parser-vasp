@@ -22,7 +22,7 @@ object VaspParser extends SimpleExternalParserGenerator(
   mainFileTypes = Seq("text/.*"),
   mainFileRe = """^\s*vasp.(?<version>[0-9.]+)\s+(?<srcDate>[0-9]+[A-Za-z]+[0-9]+)\s+\(build (?<buildDate>[^)]+)\)\s+complex\s*
 """.r,
-  cmd = Seq(DefaultPythonInterpreter.python2Exe(), "${envDir}/parsers/vasp/parser/parser-vasp/parser_vasp.py",
+  cmd = Seq(DefaultPythonInterpreter.pythonExe(), "${envDir}/parsers/vasp/parser/parser-vasp/parser_vasp.py",
     "--uri", "${mainFileUri}", "${mainFilePath}"),
   resList = Seq(
     "parser-vasp/parser_vasp.py",
@@ -60,7 +60,7 @@ object VaspRunParser extends SimpleExternalParserGenerator(
 ?\s*<generator>
 ?\s*<i name="program" type="string">vasp</i>
 ?""".r,
-  cmd = Seq(DefaultPythonInterpreter.python2Exe(), "${envDir}/parsers/vasp/parser/parser-vasp/parser_vasprun.py",
+  cmd = Seq(DefaultPythonInterpreter.pythonExe(), "${envDir}/parsers/vasp/parser/parser-vasp/parser_vasprun.py",
     "${mainFileUri}", "${mainFilePath}"),
   resList = Seq(
     "parser-vasp/parser_vasprun.py",
