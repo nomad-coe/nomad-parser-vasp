@@ -73,8 +73,10 @@ class VasprunContext(object):
         self.kpoints = None
         self.weights = None
         self.ispin = None
+        self.ibrion = None
         self.lastSystemDescription = None
         self.labels = None
+        self.singleConfCalcs = []
 
     sectionMap = {
         "modeling": ["section_run", "section_method"],
@@ -85,7 +87,7 @@ class VasprunContext(object):
     def startedParsing(self, parser):
         self.parser = parser
 
-    def onEnd_generator(self, parser, event, element):
+    def onEnd_generator(self, parser, event, element, pathStr):
         backend = parser.backend
         program_name = g(element, "i/[@name='program']")
         if program_name:
@@ -95,6 +97,7 @@ class VasprunContext(object):
                    g(element, "i/[@name='platform']", ""))
         if not version.isspace():
             backend.addValue("program_version", version)
+        backend.addValue("program_basis_set_type", "plane waves")
         date = g(element, "i/[@name='date']")
         pdate = None
         time = g(element, "i/[@name='time']")
@@ -108,10 +111,12 @@ class VasprunContext(object):
             if i.tag != "i" or not i.attrib.get("name") in set(["program", "version", "subversion", "platform", "program_version", "date", "time"]):
                 backend.pwarn("unexpected tag %s %s %r in generator" % (i.tag, i.attrib, i.text))
 
-    def onEnd_incar(self, parser, event, element):
+    def onEnd_incar(self, parser, event, element, pathStr):
         backend = parser.backend
         metaEnv = parser.backend.metaInfoEnv()
         dft_plus_u = False
+        ibrion = None
+        nsw = 0
         for el in element:
             if (el.tag != "i"):
                 backend.pwarn("unexpected tag %s %s %r in incar" % (el.tag, el.attrib, el.text))
@@ -162,13 +167,20 @@ class VasprunContext(object):
                     elif name == "LDAU":
                         if re.match(".?[Tt](?:[rR][uU][eE])?.?|[yY](?:[eE][sS])?|1", el.text.strip()):
                             dft_plus_u = True
+                    elif name == "IBRION":
+                        ibrion = int(el.text.strip())
+                    elif name == "NSW":
+                        nsw = int(el.text.strip())
+        if ibrion is None:
+            ibrion = -1 if nsw == 0 or nsw == 1 else 0
+        self.ibrion = ibrion
         if dft_plus_u:
             backend.addValue("electronic_structure_method", "DFT+U")
         else:
             backend.addValue("electronic_structure_method", "DFT")
 
 
-    def onEnd_kpoints(self, parser, event, element):
+    def onEnd_kpoints(self, parser, event, element, pathStr):
         backend = parser.backend
         self.bands = None
         self.kpoints = None
@@ -199,9 +211,9 @@ class VasprunContext(object):
                 backend.pwarn("Unknown tag %s in kpoints" % el.tag)
 
 
-    def onEnd_structure(self, parser, event, element):
+    def onEnd_structure(self, parser, event, element, pathStr):
         backend = parser.backend
-        gIndexes = parser.tagSections["/".join([x.tag for x in parser.path[:]]) + "/" + element.tag]
+        gIndexes = parser.tagSections[pathStr]
         self.lastSystemDescription = gIndexes["section_system"]
         for el in element:
             if (el.tag == "crystal"):
@@ -236,7 +248,7 @@ class VasprunContext(object):
             backend.addArrayValues("atom_labels", self.labels)
 
 
-    def onEnd_eigenvalues(self, parser, event, element):
+    def onEnd_eigenvalues(self, parser, event, element, pathStr):
         backend = parser.backend
         eConv = convert_unit_function("eV", "J")
         eigenvalues = None
@@ -294,10 +306,30 @@ class VasprunContext(object):
             else:
                 backend.pwarn("unexpected tag %s in the eigenvalues" % el.tag)
 
-    def onEnd_scstep(self, parser, event, element):
+    def onEnd_scstep(self, parser, event, element, pathStr):
         pass
 
-    def onEnd_calculation(self, parser, event, element):
+    def onStart_calculation(self, parser, event, element, pathStr):
+        gIndexes = parser.tagSections[pathStr]
+        self.singleConfCalcs.append(gIndexes["section_single_configuration_calculation"])
+
+    def onEnd_modeling(self, parser, event, element, pathStr):
+        backend = parser.backend
+        if self.ibrion is None or self.ibrion == -1:
+            return
+        samplingGIndex = backend.openSection("section_sampling_method")
+        if self.ibrion == 0:
+            sampling_method = "molecular_dynamics"
+        else:
+            sampling_method = "geometry_optimization"
+        backend.addValue("sampling_method", sampling_method)
+        backend.closeSection("section_sampling_method", samplingGIndex)
+        frameSequenceGIndex = backend.openSection("section_frame_sequence")
+        backend.addValue("frame_sequence_to_sampling_ref", samplingGIndex)
+        backend.addArrayValues("frame_sequence_local_frames_ref", np.asarray(self.singleConfCalcs))
+        backend.closeSection("section_frame_sequence", frameSequenceGIndex)
+
+    def onEnd_calculation(self, parser, event, element, pathStr):
         eConv = convert_unit_function("eV", "J")
         fConv = convert_unit_function("eV/angstrom", "N")
         pConv = convert_unit_function("eV/angstrom^3", "Pa")
@@ -330,7 +362,7 @@ class VasprunContext(object):
                             f = getVector(enEl, lambda x: pConv(float(x)))
                             backend.addValue("stress_tensor", f)
 
-    def onEnd_atominfo(self, parser, event, element):
+    def onEnd_atominfo(self, parser, event, element, pathStr):
         nAtoms = None
         nAtomTypes = None
         atomTypes = []
@@ -396,6 +428,7 @@ class VasprunContext(object):
             else:
                 backend.pwarn("unexpected tag %s in atominfo" % el.tag)
         self.labels = np.asarray(labels)
+
     def incarOutTag(self, el):
         backend = parser.backend
         metaEnv = parser.backend.metaInfoEnv()
@@ -463,7 +496,7 @@ class VasprunContext(object):
             else:
                 backend.pwarn("unexpected tag %s %s in parameters at depth %d" % (separators.tag, separators.attrib, depth))
 
-    def onEnd_parameters(self, parser, event, element):
+    def onEnd_parameters(self, parser, event, element, pathStr):
         backend = parser.backend
         self.separatorScan(element)
 
@@ -515,25 +548,28 @@ class XmlParser(object):
         try:
             for event, el in xml.etree.ElementTree.iterparse(self.fIn, events=["start","end"], parser = xmlParser):
                 if event == 'start':
+                    pathStr = "/".join([x.tag for x in self.path]) + "/" + el.tag
                     sectionsToOpen = self.sectionMap.get(el.tag, None)
                     if sectionsToOpen:
-                        pathStr = "/".join([x.tag for x in self.path]) + "/" + el.tag
                         gIndexes = {}
                         for sect in sectionsToOpen:
                             gIndexes[sect] = backend.openSection(sect)
                         self.tagSections[pathStr] = gIndexes
                     callback = self.callbacks.get("onStart_" + el.tag, None)
                     if callback:
-                        callback(self, event, el)
+                        callback(self, event, el, pathStr)
                     self.path.append(el)
                 elif event == 'end':
                     lastEl = self.path.pop()
                     if lastEl != el:
                         raise Exception("mismatched path at end, got %s expected %s" % (lastEl, el))
                     tag = el.tag
+                    pathStr = "/".join([x.tag for x in self.path]) + "/" + tag
                     callback = self.callbacks.get("onEnd_" + tag, None)
                     if callback:
-                        if not callback(self, event, el):
+                        if not callback(self, event, el, pathStr):
+                            # if callback does not return True then assume that the current element has been processed
+                            # and can be removed
                             el.clear()
                             if self.path:
                                 self.path[-1].remove(el)
@@ -543,7 +579,6 @@ class XmlParser(object):
                         self.path[-1].remove(el)
                     sectionsToClose = self.sectionMap.get(tag, None)
                     if sectionsToClose:
-                        pathStr = "/".join([x.tag for x in self.path]) + "/" + tag
                         gIndexes = self.tagSections[pathStr]
                         del self.tagSections[pathStr]
                         for sect in reversed(sectionsToClose):
