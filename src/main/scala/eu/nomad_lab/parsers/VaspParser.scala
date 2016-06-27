@@ -58,7 +58,7 @@ object VaspRunParser extends SimpleExternalParserGenerator(
   mainFileRe = """\s*<\?xml version="1\.0" encoding="ISO-8859-1"\?>\s*
 ?\s*<modeling>
 ?\s*<generator>
-?\s*<i name="program" type="string">vasp</i>
+?\s*<i name="program" type="string">\s*vasp\s*</i>
 ?""".r,
   cmd = Seq(DefaultPythonInterpreter.pythonExe(), "${envDir}/parsers/vasp/parser/parser-vasp/parser_vasprun.py",
     "${mainFileUri}", "${mainFilePath}"),
