@@ -215,9 +215,9 @@ class VasprunContext(object):
         backend = parser.backend
         gIndexes = parser.tagSections[pathStr]
         self.lastSystemDescription = gIndexes["section_system"]
+        cell = None
         for el in element:
             if (el.tag == "crystal"):
-                cell = None
                 for cellEl in el:
                     if cellEl.tag == "varray":
                         name = cellEl.attrib.get("name", None)
@@ -239,7 +239,7 @@ class VasprunContext(object):
                 name = el.attrib.get("name", None)
                 if name == "positions":
                     pos = getVector(el)
-                    backend.addArrayValues("atom_positions", np.asarray(pos))
+                    backend.addArrayValues("atom_positions", np.dot(np.asarray(pos), np.transpose(cell)))
                 else:
                     backend.pwarn("Unexpected varray in structure %s" % el.attrib)
             else:
