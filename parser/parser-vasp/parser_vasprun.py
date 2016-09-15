@@ -13,6 +13,9 @@ import numpy as np
 import setup_paths
 from nomadcore.unit_conversion.unit_conversion import convert_unit_function
 
+eV2J = convert_unit_function("eV","J")
+eV2JV = np.vectorize(eV2J)
+
 def secondsFromEpoch(date):
     epoch = datetime(1970,1,1)
     ts=date-epoch
@@ -250,7 +253,6 @@ class VasprunContext(object):
 
     def onEnd_eigenvalues(self, parser, event, element, pathStr):
         backend = parser.backend
-        eConv = convert_unit_function("eV", "J")
         eigenvalues = None
         occupation = None
         for el in element:
@@ -282,7 +284,7 @@ class VasprunContext(object):
                     else:
                         backend.pwarn("unexpected tag %s in array of the eigenvalues" % arrEl.tag)
                 if eigenvalues is not None:
-                    ev = [eConv(x) for x in eigenvalues]
+                    ev = eV2JV(eigenvalues)
                     if self.bands:
                         divisions = int(self.bands['divisions'])
                         backend.openNonOverlappingSection("section_k_band")
@@ -301,7 +303,8 @@ class VasprunContext(object):
                         backend.closeNonOverlappingSection("section_k_band")
                     else:
                         backend.openNonOverlappingSection("section_eigenvalues")
-                        backend.addArrayValues("eigenvalues_values", np.asarray(ev))
+                        backend.addArrayValues("eigenvalues_values", ev)
+                        backend.addArrayValues("eigenvalues_occupation", occupation)
                         backend.closeNonOverlappingSection("section_eigenvalues")
             else:
                 backend.pwarn("unexpected tag %s in the eigenvalues" % el.tag)
@@ -330,7 +333,7 @@ class VasprunContext(object):
         backend.closeSection("section_frame_sequence", frameSequenceGIndex)
 
     def onEnd_calculation(self, parser, event, element, pathStr):
-        eConv = convert_unit_function("eV", "J")
+        eConv = eV2J
         fConv = convert_unit_function("eV/angstrom", "N")
         pConv = convert_unit_function("eV/angstrom^3", "Pa")
         backend = parser.backend
@@ -480,7 +483,7 @@ class VasprunContext(object):
                 elif name == "ISPIN":
                     self.ispin = int(el.text.strip())
 
-    def separatorScan(self, element, depth = 0):
+    def separatorScan(self, element, backend, depth = 0):
         for separators in element:
             if separators.tag == "separator":
                 separatorName = separators.attrib.get("name")
@@ -488,7 +491,7 @@ class VasprunContext(object):
                     if el.tag == "i":
                         self.incarOutTag(el)
                     elif el.tag == "separator":
-                        self.separatorScan(el, depth + 1)
+                        self.separatorScan(el, backend, depth + 1)
                     else:
                         backend.pwarn("unexpected tag %s %s in parameters separator %s at depth %d" % (el.tag, el.attrib, separatorName, depth))
             elif separators.tag == "i":
@@ -497,8 +500,97 @@ class VasprunContext(object):
                 backend.pwarn("unexpected tag %s %s in parameters at depth %d" % (separators.tag, separators.attrib, depth))
 
     def onEnd_parameters(self, parser, event, element, pathStr):
+        self.separatorScan(element, parser.backend)
+
+    def onEnd_dos(self, parser, event, element, pathStr):
+        "density of states"
         backend = parser.backend
-        self.separatorScan(element)
+        backend.openNonOverlappingSection("section_dos")
+        for el in element:
+            if el.tag == "i":
+                if el.attrib.get("name") == "efermi":
+                    backend.addValue("dos_fermi_energy",eV2J(float(el.text.strip())))
+                else:
+                    backend.pwarn("unexpected tag %s %s in dos" % (el.tag, el.attrib))
+            elif el.tag == "total":
+                for el1 in el:
+                    if el1.tag == "array":
+                        for el2 in el1:
+                            if el2.tag == "dimension" or el2.tag == "field":
+                                pass
+                            elif el2.tag == "set":
+                                dosL = []
+                                for spinComponent in el2:
+                                    if spinComponent.tag == "set":
+                                        dosL.append(getVector(spinComponent, field = "r"))
+                                    else:
+                                        backend.pwarn("unexpected tag %s %s in dos total array set" % (spinComponent.tag, spinComponent.attrib))
+                                dosA = np.asarray(dosL)
+                                if len(dosA.shape) != 3:
+                                    raise Exception("unexpected shape %s (%s) for total dos (ragged arrays?)" % (dosA.shape), dosA.dtype)
+                                dosE = eV2JV(dosA[:,:,0])
+                                dosI = dosA[:,:,2]
+                                dosV = dosA[:,:,1]
+                                backend.addArrayValues("dos_energies", dosE)
+                                backend.addArrayValues("dos_values", dosV)
+                                backend.addArrayValues("dos_integrated_values", dosI)
+                            else:
+                                backend.pwarn("unexpected tag %s %s in dos total array" % (el2.tag, el2.attrib))
+                    else:
+                        backend.pwarn("unexpected tag %s %s in dos total" % (el2.tag, el2.attrib))
+            elif el.tag == "partial":
+                for el1 in el:
+                    if el1.tag == "array":
+                        lm=[]
+                        for el2 in el1:
+                            if el2.tag == "dimension":
+                                pass
+                            elif el2.tag == "field":
+                                if el2.text.strip() == "energy":
+                                    pass
+                                else:
+                                    strLm = {
+                                        "s": [0,0],
+                                        "px":[1,0],
+                                        "py":[1,1],
+                                        "pz":[1,2],
+                                        "dx2":[1,0],
+                                        "dxy":[1,1],
+                                        "dxz":[1,2],
+                                        "dy2":[1,3],
+                                        "dyz":[1,4],
+                                        "dz2":[1,5]
+                                    }
+                                    lm.append(strLm[el2.text.strip()])
+                            elif el2.tag == "set":
+                                dosL = []
+                                for atom in el2:
+                                    if atom.tag == "set":
+                                        atomL = []
+                                        dosL.append(atomL)
+                                        for spinComponent in atom:
+                                            if spinComponent.tag == "set":
+                                                atomL.append(getVector(spinComponent, field = "r"))
+                                            else:
+                                                backend.pwarn("unexpected tag %s %s in dos partial array set set" % (spinComponent.tag, spinComponent.attrib))
+                                    else:
+                                        backend.pwarn("unexpected tag %s %s in dos partial array set" % (spinComponent.tag, spinComponent.attrib))
+                                dosLM = np.asarray(dosL)
+                                assert len(dosLM.shape) == 4, "invalid shape dimension in projected dos (ragged arrays?)"
+                                backend.addArrayValues("dos_values_lm", dosLM[:,:,:,1:])
+                            else:
+                                backend.pwarn("unexpected tag %s %s in dos total array" % (el2.tag, el2.attrib))
+                        backend.addArrayValues("dos_lm", np.asarray(lm))
+                        backend.addValue("dos_m_kind", "polynomial")
+                    else:
+                        backend.pwarn("unexpected tag %s %s in dos total" % (el2.tag, el2.attrib))
+            else:
+                backend.pwarn("unexpected tag %s %s in dos" % (el2.tag, el2.attrib))
+        backend.closeNonOverlappingSection("section_dos")
+
+    def onEnd_projected(self, parser, event, element, pathStr):
+        "projected eigenvalues"
+        return None
 
 class XmlParser(object):
     @staticmethod
