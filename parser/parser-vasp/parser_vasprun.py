@@ -551,17 +551,19 @@ class VasprunContext(object):
                                 else:
                                     strLm = {
                                         "s": [0,0],
+                                        "p": [1,-1],
                                         "px":[1,0],
                                         "py":[1,1],
                                         "pz":[1,2],
-                                        "dx2":[1,0],
-                                        "dxy":[1,1],
-                                        "dxz":[1,2],
-                                        "dy2":[1,3],
-                                        "dyz":[1,4],
-                                        "dz2":[1,5]
+                                        "d": [2,-1],
+                                        "dx2":[2,0],
+                                        "dxy":[2,1],
+                                        "dxz":[2,2],
+                                        "dy2":[2,3],
+                                        "dyz":[2,4],
+                                        "dz2":[2,5]
                                     }
-                                    lm.append(strLm[el2.text.strip()])
+                                    lm.append(strLm.get(el2.text.strip(), [-1,-1]))
                             elif el2.tag == "set":
                                 dosL = []
                                 for atom in el2:
