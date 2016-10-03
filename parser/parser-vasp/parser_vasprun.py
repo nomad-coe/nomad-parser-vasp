@@ -242,7 +242,7 @@ class VasprunContext(object):
                 name = el.attrib.get("name", None)
                 if name == "positions":
                     pos = getVector(el)
-                    backend.addArrayValues("atom_positions", np.dot(np.asarray(pos), np.transpose(cell)))
+                    backend.addArrayValues("atom_positions", np.dot(np.asarray(pos), cell))
                 else:
                     backend.pwarn("Unexpected varray in structure %s" % el.attrib)
             else:
