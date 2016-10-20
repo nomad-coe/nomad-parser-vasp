@@ -93,8 +93,10 @@ class VasprunContext(object):
     def onEnd_generator(self, parser, event, element, pathStr):
         backend = parser.backend
         program_name = g(element, "i/[@name='program']")
-        if program_name:
-            backend.addValue("program_name", program_name)
+        if program_name.strip().upper() == "VASP":
+            backend.addValue("program_name", "VASP")
+        else:
+            raise Exception("unexpected program name: %s" % program_name)
         version = (g(element, "i/[@name='version']", "") + " " +
                    g(element, "i/[@name='subversion']", "") + " " +
                    g(element, "i/[@name='platform']", ""))
