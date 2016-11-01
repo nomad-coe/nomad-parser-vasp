@@ -3,7 +3,7 @@ from builtins import map
 from builtins import range
 from builtins import object
 import xml.etree.ElementTree
-import logging, sys
+import logging, sys, bisect
 import setup_paths
 from datetime import datetime
 import os, logging, re
@@ -12,9 +12,160 @@ from nomadcore.local_meta_info import loadJsonFile, InfoKindEl
 import numpy as np
 import setup_paths
 from nomadcore.unit_conversion.unit_conversion import convert_unit_function
+import ase.geometry
+from math import pi
 
 eV2J = convert_unit_function("eV","J")
 eV2JV = np.vectorize(eV2J)
+
+def crystal_structure_from_cell(cell, eps=1e-4):
+    """Return the crystal structure as a string calculated from the cell.
+    """
+    cellpar = ase.geometry.cell_to_cellpar(cell=cell)
+    abc = cellpar[:3]
+    angles = cellpar[3:] / 180 * pi
+    a, b, c = abc
+    alpha, beta, gamma = angles
+    if abc.ptp() < eps and abs(angles - pi / 2).max() < eps:
+        return 'cubic'
+    elif abc.ptp() < eps and abs(angles - pi / 3).max() < eps:
+        return 'fcc'
+    elif abc.ptp() < eps and abs(angles - np.arccos(-1 / 3)).max() < eps:
+        return 'bcc'
+    elif abs(a - b) < eps and abs(angles - pi / 2).max() < eps:
+        return 'tetragonal'
+    elif abs(angles - pi / 2).max() < eps:
+        return 'orthorhombic'
+    elif (abs(a - b) < eps and
+          abs(gamma - pi / 3 * 2) < eps and
+          abs(angles[:2] - pi / 2).max() < eps):
+        return 'hexagonal'
+    elif (c >= a and c >= b and alpha < pi / 2 and
+          abs(angles[1:] - pi / 2).max() < eps):
+        return 'monoclinic'
+    else:
+       raise ValueError('Cannot find crystal structure')
+
+
+special_points = {
+    'cubic': {'G': [0, 0, 0],
+              'M': [1 / 2, 1 / 2, 0],
+              'R': [1 / 2, 1 / 2, 1 / 2],
+              'X': [0, 1 / 2, 0]},
+    'fcc': {'G': [0, 0, 0],
+            'K': [3 / 8, 3 / 8, 3 / 4],
+            'L': [1 / 2, 1 / 2, 1 / 2],
+            'U': [5 / 8, 1 / 4, 5 / 8],
+            'W': [1 / 2, 1 / 4, 3 / 4],
+            'X': [1 / 2, 0, 1 / 2]},
+    'bcc': {'G': [0, 0, 0],
+            'H': [1 / 2, -1 / 2, 1 / 2],
+            'P': [1 / 4, 1 / 4, 1 / 4],
+            'N': [0, 0, 1 / 2]},
+    'tetragonal': {'G': [0, 0, 0],
+                   'A': [1 / 2, 1 / 2, 1 / 2],
+                   'M': [1 / 2, 1 / 2, 0],
+                   'R': [0, 1 / 2, 1 / 2],
+                   'X': [0, 1 / 2, 0],
+                   'Z': [0, 0, 1 / 2]},
+    'orthorhombic': {'G': [0, 0, 0],
+                     'R': [1 / 2, 1 / 2, 1 / 2],
+                     'S': [1 / 2, 1 / 2, 0],
+                     'T': [0, 1 / 2, 1 / 2],
+                     'U': [1 / 2, 0, 1 / 2],
+                     'X': [1 / 2, 0, 0],
+                     'Y': [0, 1 / 2, 0],
+                     'Z': [0, 0, 1 / 2]},
+    'hexagonal': {'G': [0, 0, 0],
+                  'A': [0, 0, 1 / 2],
+                  'H': [1 / 3, 1 / 3, 1 / 2],
+                  'K': [1 / 3, 1 / 3, 0],
+                  'L': [1 / 2, 0, 1 / 2],
+                  'M': [1 / 2, 0, 0]}}
+
+
+special_paths = {
+    'cubic': 'GXMGRX,MR',
+    'fcc': 'GXWKGLUWLK,UX',
+    'bcc': 'GHNGPH,PN',
+    'tetragonal': 'GXMGZRAZXR,MA',
+    'orthorhombic': 'GXSYGZURTZ,YT,UX,SR',
+    'hexagonal': 'GMKGALHA,LM,KH',
+    'monoclinic': 'GYHCEM1AXH1,MDZ,YD'}
+
+
+def get_special_points(cell, eps=1e-4):
+    """Return dict of special points.
+
+    The definitions are from a paper by Wahyu Setyawana and Stefano
+    Curtarolo::
+
+        http://dx.doi.org/10.1016/j.commatsci.2010.05.010
+
+    lattice: str
+        One of the following: cubic, fcc, bcc, orthorhombic, tetragonal,
+        hexagonal or monoclinic.
+    cell: 3x3 ndarray
+        Unit cell.
+    eps: float
+        Tolerance for cell-check.
+    """
+
+    lattice = crystal_structure_from_cell(cell)
+
+    cellpar = ase.geometry.cell_to_cellpar(cell=cell)
+    abc = cellpar[:3]
+    angles = cellpar[3:] / 180 * pi
+    a, b, c = abc
+    alpha, beta, gamma = angles
+
+    # Check that the unit-cells are as in the Setyawana-Curtarolo paper:
+    if lattice == 'cubic':
+        assert abc.ptp() < eps and abs(angles - pi / 2).max() < eps
+    elif lattice == 'fcc':
+        assert abc.ptp() < eps and abs(angles - pi / 3).max() < eps
+    elif lattice == 'bcc':
+        angle = np.arccos(-1 / 3)
+        assert abc.ptp() < eps and abs(angles - angle).max() < eps
+    elif lattice == 'tetragonal':
+        assert abs(a - b) < eps and abs(angles - pi / 2).max() < eps
+    elif lattice == 'orthorhombic':
+        assert abs(angles - pi / 2).max() < eps
+    elif lattice == 'hexagonal':
+        assert abs(a - b) < eps
+        assert abs(gamma - pi / 3 * 2) < eps
+        assert abs(angles[:2] - pi / 2).max() < eps
+    elif lattice == 'monoclinic':
+        assert c >= a and c >= b
+        assert alpha < pi / 2 and abs(angles[1:] - pi / 2).max() < eps
+    if lattice != 'monoclinic':
+        return special_points[lattice]
+
+    # Here, we need the cell:
+    eta = (1 - b * cos(alpha) / c) / (2 * sin(alpha)**2)
+    nu = 1 / 2 - eta * c * cos(alpha) / b
+    return {'G': [0, 0, 0],
+            'A': [1 / 2, 1 / 2, 0],
+            'C': [0, 1 / 2, 1 / 2],
+            'D': [1 / 2, 0, 1 / 2],
+            'D1': [1 / 2, 0, -1 / 2],
+            'E': [1 / 2, 1 / 2, 1 / 2],
+            'H': [0, eta, 1 - nu],
+            'H1': [0, 1 - eta, nu],
+            'H2': [0, eta, -nu],
+            'M': [1 / 2, eta, 1 - nu],
+            'M1': [1 / 2, 1 - eta, nu],
+            'M2': [1 / 2, eta, -nu],
+            'X': [0, 1 / 2, 0],
+            'Y': [0, 0, 1 / 2],
+            'Y1': [0, 0, -1 / 2],
+            'Z': [1 / 2, 0, 0]}
+
+def findLabel(labels, value):
+    for k, v in labels.items():
+        if np.all(np.abs(v-value) < 1.e-5):
+            return k
+    return "?"
 
 def secondsFromEpoch(date):
     epoch = datetime(1970,1,1)
@@ -80,6 +231,10 @@ class VasprunContext(object):
         self.lastSystemDescription = None
         self.labels = None
         self.singleConfCalcs = []
+        self.vbTopE = None
+        self.ebMinE = None
+        self.eFermi = None
+        self.cell = None
 
     sectionMap = {
         "modeling": ["section_run", "section_method"],
@@ -220,7 +375,7 @@ class VasprunContext(object):
         backend = parser.backend
         gIndexes = parser.tagSections[pathStr]
         self.lastSystemDescription = gIndexes["section_system"]
-        cell = None
+        self.cell = None
         for el in element:
             if (el.tag == "crystal"):
                 for cellEl in el:
@@ -228,8 +383,8 @@ class VasprunContext(object):
                         name = cellEl.attrib.get("name", None)
                         if name == "basis":
                             conv = convert_unit_function("angstrom","m")
-                            cell = getVector(cellEl, lambda x: conv(float(x)))
-                            backend.addArrayValues("simulation_cell", np.asarray(cell))
+                            self.cell = getVector(cellEl, lambda x: conv(float(x)))
+                            backend.addArrayValues("simulation_cell", np.asarray(self.cell))
                             backend.addArrayValues("configuration_periodic_dimensions", np.ones(3, dtype=bool))
                         elif name =="rec_basis":
                             pass
@@ -244,7 +399,7 @@ class VasprunContext(object):
                 name = el.attrib.get("name", None)
                 if name == "positions":
                     pos = getVector(el)
-                    backend.addArrayValues("atom_positions", np.dot(np.asarray(pos), cell))
+                    backend.addArrayValues("atom_positions", np.dot(np.asarray(pos), self.cell))
                 else:
                     backend.pwarn("Unexpected varray in structure %s" % el.attrib)
             else:
@@ -286,7 +441,26 @@ class VasprunContext(object):
                     else:
                         backend.pwarn("unexpected tag %s in array of the eigenvalues" % arrEl.tag)
                 if eigenvalues is not None:
+
                     ev = eV2JV(eigenvalues)
+                    vbTopE = float('-inf') # ev[0,0,0]
+                    ebMinE = float('inf')
+                    for ispin in range(occupation.shape[0]):
+                        for ik in range(occupation.shape[1]):
+                            ebIndex = bisect.bisect_right(-occupation[ispin, ik, :], -0.5) - 1
+                            vbTopIndex = ebIndex -1
+                            if vbTopIndex >= 0:
+                                vbTopK = ev[ispin, ik, vbTopIndex]
+                                if vbTopK > vbTopE:
+                                    vbTopE = vbTopK
+                            if ebIndex < ev.shape[2]:
+                                ebMinK = ev[ispin, ik, ebIndex]
+                                if ebMinK < ebMinE:
+                                    ebMinE = ebMinK
+                    self.vbTopE = vbTopE
+                    self.ebMinE = ebMinE
+                    backend.addValue("energy_reference_highest_occupied", vbTopE)
+                    backend.addValue("energy_reference_lowest_unoccupied", ebMinE)
                     if self.bands:
                         divisions = int(self.bands['divisions'])
                         backend.openNonOverlappingSection("section_k_band")
@@ -303,6 +477,24 @@ class VasprunContext(object):
                             backend.addArrayValues("band_segm_start_end", np.asarray([kpt[isegment, 0], kpt[isegment, divisions - 1]]))
                             backend.closeNonOverlappingSection("section_k_band_segment")
                         backend.closeNonOverlappingSection("section_k_band")
+                        backend.openNonOverlappingSection("section_k_band_normalized")
+                        specialPoints = {}
+                        try:
+                            specialPoints = get_special_points(convert_unit_function("m","angstrom")(self.cell))
+                        except:
+                            logging.exception("failed to get special points")
+                        for isegment in range(nsegments):
+                            backend.openNonOverlappingSection("section_k_band_segment_normalized")
+                            backend.addArrayValues("band_energies_normalized", energies[:, isegment, :, :]-self.vbTopE)
+                            backend.addArrayValues("band_occupations_normalized", occ[:, isegment, :, :])
+                            backend.addArrayValues("band_k_points_normalized", kpt[isegment])
+                            backend.addArrayValues("band_segm_start_end_normalized", np.asarray([kpt[isegment, 0], kpt[isegment, divisions - 1]]))
+                            backend.addValue("band_segm_labels_normalized",
+                                             [findLabel(specialPoints, kpt[isegment, 0]),
+                                              findLabel(specialPoints, kpt[isegment, divisions - 1])])
+                            backend.closeNonOverlappingSection("section_k_band_segment_normalized")
+
+                        backend.closeNonOverlappingSection("section_k_band_normalized")
                     else:
                         backend.openNonOverlappingSection("section_eigenvalues")
                         backend.addArrayValues("eigenvalues_values", ev)
@@ -511,7 +703,9 @@ class VasprunContext(object):
         for el in element:
             if el.tag == "i":
                 if el.attrib.get("name") == "efermi":
-                    backend.addValue("dos_fermi_energy",eV2J(float(el.text.strip())))
+                    self.eFermi = eV2J(float(el.text.strip()))
+                    backend.addValue("dos_fermi_energy", self.eFermi)
+                    backend.addValue("energy_reference_fermi", self.eFermi)
                 else:
                     backend.pwarn("unexpected tag %s %s in dos" % (el.tag, el.attrib))
             elif el.tag == "total":
@@ -533,7 +727,12 @@ class VasprunContext(object):
                                 dosE = eV2JV(dosA[:,:,0])
                                 dosI = dosA[:,:,2]
                                 dosV = dosA[:,:,1]
+                                if self.vbTopE is not None:
+                                    eRef = self.vbTopE
+                                else:
+                                    eRef = self.eFermi
                                 backend.addArrayValues("dos_energies", dosE)
+                                backend.addArrayValues("dos_energies_normalized", dosE - eRef)
                                 backend.addArrayValues("dos_values", dosV)
                                 backend.addArrayValues("dos_integrated_values", dosI)
                             else:
