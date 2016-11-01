@@ -409,6 +409,8 @@ class VasprunContext(object):
 
 
     def onEnd_eigenvalues(self, parser, event, element, pathStr):
+        if pathStr != "modeling/calculation/eigenvalues":
+            return True
         backend = parser.backend
         eigenvalues = None
         occupation = None
@@ -443,20 +445,22 @@ class VasprunContext(object):
                 if eigenvalues is not None:
 
                     ev = eV2JV(eigenvalues)
-                    vbTopE = float('-inf') # ev[0,0,0]
-                    ebMinE = float('inf')
+                    vbTopE = []
+                    ebMinE = []
                     for ispin in range(occupation.shape[0]):
+                        vbTopE.append(float('-inf'))
+                        ebMinE.append(float('inf'))
                         for ik in range(occupation.shape[1]):
                             ebIndex = bisect.bisect_right(-occupation[ispin, ik, :], -0.5) - 1
                             vbTopIndex = ebIndex -1
                             if vbTopIndex >= 0:
                                 vbTopK = ev[ispin, ik, vbTopIndex]
-                                if vbTopK > vbTopE:
-                                    vbTopE = vbTopK
+                                if vbTopK > vbTopE[ispin]:
+                                    vbTopE[ispin] = vbTopK
                             if ebIndex < ev.shape[2]:
                                 ebMinK = ev[ispin, ik, ebIndex]
-                                if ebMinK < ebMinE:
-                                    ebMinE = ebMinK
+                                if ebMinK < ebMinE[ispin]:
+                                    ebMinE[ispin] = ebMinK
                     self.vbTopE = vbTopE
                     self.ebMinE = ebMinE
                     backend.addValue("energy_reference_highest_occupied", vbTopE)
@@ -485,7 +489,7 @@ class VasprunContext(object):
                             logging.exception("failed to get special points")
                         for isegment in range(nsegments):
                             backend.openNonOverlappingSection("section_k_band_segment_normalized")
-                            backend.addArrayValues("band_energies_normalized", energies[:, isegment, :, :]-self.vbTopE)
+                            backend.addArrayValues("band_energies_normalized", energies[:, isegment, :, :] - max(self.vbTopE))
                             backend.addArrayValues("band_occupations_normalized", occ[:, isegment, :, :])
                             backend.addArrayValues("band_k_points_normalized", kpt[isegment])
                             backend.addArrayValues("band_segm_start_end_normalized", np.asarray([kpt[isegment, 0], kpt[isegment, divisions - 1]]))
@@ -705,7 +709,7 @@ class VasprunContext(object):
                 if el.attrib.get("name") == "efermi":
                     self.eFermi = eV2J(float(el.text.strip()))
                     backend.addValue("dos_fermi_energy", self.eFermi)
-                    backend.addValue("energy_reference_fermi", self.eFermi)
+                    backend.addValue("energy_reference_fermi", [self.eFermi]*self.ispin)
                 else:
                     backend.pwarn("unexpected tag %s %s in dos" % (el.tag, el.attrib))
             elif el.tag == "total":
@@ -727,8 +731,8 @@ class VasprunContext(object):
                                 dosE = eV2JV(dosA[:,:,0])
                                 dosI = dosA[:,:,2]
                                 dosV = dosA[:,:,1]
-                                if self.vbTopE is not None:
-                                    eRef = self.vbTopE
+                                if self.vbTopE:
+                                    eRef = max(self.vbTopE)
                                 else:
                                     eRef = self.eFermi
                                 backend.addArrayValues("dos_energies", dosE)
