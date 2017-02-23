@@ -1,3 +1,4 @@
+# coding=utf-8
 from __future__ import division
 from builtins import map
 from builtins import range
@@ -48,27 +49,27 @@ def crystal_structure_from_cell(cell, eps=1e-4):
 
 
 special_points = {
-    'cubic': {'G': [0, 0, 0],
+    'cubic': {'Γ': [0, 0, 0],
               'M': [1 / 2, 1 / 2, 0],
               'R': [1 / 2, 1 / 2, 1 / 2],
               'X': [0, 1 / 2, 0]},
-    'fcc': {'G': [0, 0, 0],
+    'fcc': {'Γ': [0, 0, 0],
             'K': [3 / 8, 3 / 8, 3 / 4],
             'L': [1 / 2, 1 / 2, 1 / 2],
             'U': [5 / 8, 1 / 4, 5 / 8],
             'W': [1 / 2, 1 / 4, 3 / 4],
             'X': [1 / 2, 0, 1 / 2]},
-    'bcc': {'G': [0, 0, 0],
+    'bcc': {'Γ': [0, 0, 0],
             'H': [1 / 2, -1 / 2, 1 / 2],
             'P': [1 / 4, 1 / 4, 1 / 4],
             'N': [0, 0, 1 / 2]},
-    'tetragonal': {'G': [0, 0, 0],
+    'tetragonal': {'Γ': [0, 0, 0],
                    'A': [1 / 2, 1 / 2, 1 / 2],
                    'M': [1 / 2, 1 / 2, 0],
                    'R': [0, 1 / 2, 1 / 2],
                    'X': [0, 1 / 2, 0],
                    'Z': [0, 0, 1 / 2]},
-    'orthorhombic': {'G': [0, 0, 0],
+    'orthorhombic': {'Γ': [0, 0, 0],
                      'R': [1 / 2, 1 / 2, 1 / 2],
                      'S': [1 / 2, 1 / 2, 0],
                      'T': [0, 1 / 2, 1 / 2],
@@ -76,7 +77,7 @@ special_points = {
                      'X': [1 / 2, 0, 0],
                      'Y': [0, 1 / 2, 0],
                      'Z': [0, 0, 1 / 2]},
-    'hexagonal': {'G': [0, 0, 0],
+    'hexagonal': {'Γ': [0, 0, 0],
                   'A': [0, 0, 1 / 2],
                   'H': [1 / 3, 1 / 3, 1 / 2],
                   'K': [1 / 3, 1 / 3, 0],
@@ -85,13 +86,13 @@ special_points = {
 
 
 special_paths = {
-    'cubic': 'GXMGRX,MR',
-    'fcc': 'GXWKGLUWLK,UX',
-    'bcc': 'GHNGPH,PN',
-    'tetragonal': 'GXMGZRAZXR,MA',
-    'orthorhombic': 'GXSYGZURTZ,YT,UX,SR',
-    'hexagonal': 'GMKGALHA,LM,KH',
-    'monoclinic': 'GYHCEM1AXH1,MDZ,YD'}
+    'cubic': 'ΓXMΓRX,MR',
+    'fcc': 'ΓXWKΓLUWLK,UX',
+    'bcc': 'ΓHNΓPH,PN',
+    'tetragonal': 'ΓXMΓZRAZXR,MA',
+    'orthorhombic': 'ΓXSYΓZURTZ,YT,UX,SR',
+    'hexagonal': 'ΓMKΓALHA,LM,KH',
+    'monoclinic': 'ΓYHCEM1AXH1,MDZ,YD'}
 
 
 def get_special_points(cell, eps=1e-4):
@@ -144,7 +145,7 @@ def get_special_points(cell, eps=1e-4):
     # Here, we need the cell:
     eta = (1 - b * cos(alpha) / c) / (2 * sin(alpha)**2)
     nu = 1 / 2 - eta * c * cos(alpha) / b
-    return {'G': [0, 0, 0],
+    return {'Γ': [0, 0, 0],
             'A': [1 / 2, 1 / 2, 0],
             'C': [0, 1 / 2, 1 / 2],
             'D': [1 / 2, 0, 1 / 2],
