@@ -14,6 +14,7 @@ import numpy as np
 import setup_paths
 from nomadcore.unit_conversion.unit_conversion import convert_unit_function
 import ase.geometry
+import ase.data
 from math import pi
 
 eV2J = convert_unit_function("eV","J")
@@ -625,8 +626,26 @@ class VasprunContext(object):
                                     atomTypesDesc.append(typeDesc)
                         else:
                             backend.pwarn("unexpected tag %s in atomtypes array in atominfo" % atomsEl.tag)
-                    else:
-                        backend.pwarn("unexpected array named %s in atominfo" % name)
+                    kindIds = []
+                    for atomDesc in atomTypesDesc:
+                        kindId = backend.openSection("section_method_atom_kind")
+                        if 'element' in atomDesc:
+                            try:
+                                elNr = ase.data.chemical_symbols.index(atomDesc['element'].strip())
+                                backend.addValue("method_atom_kind_atom_number", elNr)
+                            except:
+                                logging.exception("error finding element number for %r",atomDesc['element'].strip())
+                            if "mass" in atomDesc:
+                                backend.addValue("method_atom_kind_mass", atomDesc["mass"])
+                            if "valence" in atomDesc:
+                                backend.addValue("method_atom_kind_explicit_electrons", atomDesc["valence"])
+                            if "pseudopotential" in atomDesc:
+                                backend.addValue("method_atom_kind_pseudopotential_name", atomDesc["pseudopotential"])
+                        kindIds.append(kindId)
+                        backend.closeSection("section_method_atom_kind", kindId)
+                    backend.addArrayValues("x_vasp_atom_kind_refs", np.asarray([kindIds[i-1] for i in atomTypes]))
+                else:
+                    backend.pwarn("unexpected array named %s in atominfo" % name)
             else:
                 backend.pwarn("unexpected tag %s in atominfo" % el.tag)
         self.labels = np.asarray(labels)
