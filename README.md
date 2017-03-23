@@ -1,4 +1,4 @@
-# Gaussian Parser
+# VASP Parser
 
 This is the parser for [VASP](http://www.vasp.at/).
 It is part of the [NOMAD Laboratory](http://nomad-lab.eu).
