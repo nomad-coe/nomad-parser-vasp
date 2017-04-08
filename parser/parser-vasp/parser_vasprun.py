@@ -335,6 +335,8 @@ class VasprunContext(object):
                         nsw = int(el.text.strip())
         if ibrion is None:
             ibrion = -1 if nsw == 0 or nsw == 1 else 0
+        if nsw == 0:
+            ibrion = -1
         self.ibrion = ibrion
         if dft_plus_u:
             backend.addValue("electronic_structure_method", "DFT+U")
