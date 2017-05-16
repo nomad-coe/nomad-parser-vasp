@@ -13,11 +13,12 @@ from nomadcore.local_meta_info import loadJsonFile, InfoKindEl
 import numpy as np
 import setup_paths
 from nomadcore.unit_conversion.unit_conversion import convert_unit_function
+from nomadcore.unit_conversion.unit_conversion import convert_unit
 import ase.geometry
 import ase.data
 from math import pi
 
-eV2J = convert_unit_function("eV","J")
+eV2J = convert_unit_function("eV", "J")
 eV2JV = np.vectorize(eV2J)
 
 def crystal_structure_from_cell(cell, eps=1e-4):
@@ -237,6 +238,7 @@ class VasprunContext(object):
         self.ebMinE = None
         self.eFermi = None
         self.cell = None
+        self.angstrom_cell = None
 
     sectionMap = {
         "modeling": ["section_run", "section_method"],
@@ -386,8 +388,9 @@ class VasprunContext(object):
                     if cellEl.tag == "varray":
                         name = cellEl.attrib.get("name", None)
                         if name == "basis":
-                            conv = convert_unit_function("angstrom","m")
+                            conv = convert_unit_function("angstrom", "m")
                             self.cell = getVector(cellEl, lambda x: conv(float(x)))
+                            self.angstrom_cell = np.array(getVector(cellEl))
                             backend.addArrayValues("simulation_cell", np.asarray(self.cell))
                             backend.addArrayValues("configuration_periodic_dimensions", np.ones(3, dtype=bool))
                         elif name =="rec_basis":
@@ -467,8 +470,8 @@ class VasprunContext(object):
                                     ebMinE[ispin] = ebMinK
                     self.vbTopE = vbTopE
                     self.ebMinE = ebMinE
-                    backend.addValue("energy_reference_highest_occupied", vbTopE)
-                    backend.addValue("energy_reference_lowest_unoccupied", ebMinE)
+                    backend.addArrayValues("energy_reference_highest_occupied", np.array(vbTopE))
+                    backend.addArrayValues("energy_reference_lowest_unoccupied", np.array(ebMinE))
                     if self.bands:
                         divisions = int(self.bands['divisions'])
                         backend.openNonOverlappingSection("section_k_band")
@@ -573,6 +576,7 @@ class VasprunContext(object):
         atomTypes = []
         labels = []
         atomTypesDesc = []
+        backend = parser.backend
         for el in element:
             if el.tag == "atoms":
                 nAtoms = int(el.text.strip())
@@ -653,8 +657,8 @@ class VasprunContext(object):
         self.labels = np.asarray(labels)
 
     def incarOutTag(self, el):
-        backend = parser.backend
-        metaEnv = parser.backend.metaInfoEnv()
+        backend = self.parser.backend
+        metaEnv = self.parser.backend.metaInfoEnv()
         if (el.tag != "i"):
             backend.pwarn("unexpected tag %s %s %r in incar" % (el.tag, el.attrib, el.text))
         else:
@@ -731,7 +735,7 @@ class VasprunContext(object):
                 if el.attrib.get("name") == "efermi":
                     self.eFermi = eV2J(float(el.text.strip()))
                     backend.addValue("dos_fermi_energy", self.eFermi)
-                    backend.addValue("energy_reference_fermi", [self.eFermi]*self.ispin)
+                    backend.addArrayValues("energy_reference_fermi", np.array([self.eFermi]*self.ispin))
                 else:
                     backend.pwarn("unexpected tag %s %s in dos" % (el.tag, el.attrib))
             elif el.tag == "total":
@@ -750,9 +754,22 @@ class VasprunContext(object):
                                 dosA = np.asarray(dosL)
                                 if len(dosA.shape) != 3:
                                     raise Exception("unexpected shape %s (%s) for total dos (ragged arrays?)" % (dosA.shape), dosA.dtype)
-                                dosE = eV2JV(dosA[:,:,0])
-                                dosI = dosA[:,:,2]
-                                dosV = dosA[:,:,1]
+                                dosE = eV2JV(dosA[0, :, 0])
+                                dosI = dosA[:, :, 2]
+                                dosV = dosA[:, :, 1]
+
+                                # Convert the DOS values to SI. VASP uses the
+                                # following units in the output: states/eV/cell
+                                # volume in angstrom^3
+                                ev_per_joule = convert_unit(1, "eV", "J")
+                                a = self.angstrom_cell[0, :]
+                                b = self.angstrom_cell[1, :]
+                                c = self.angstrom_cell[2, :]
+                                cell_volume = np.dot(a, np.cross(b, c))
+                                cell_volume_per_m_cubed = convert_unit(cell_volume, "angstrom^3", "m^3")
+                                dosV = dosV * ev_per_joule * cell_volume_per_m_cubed
+                                dosI = dosI * ev_per_joule * cell_volume_per_m_cubed
+
                                 if self.vbTopE:
                                     eRef = max(self.vbTopE)
                                 else:
