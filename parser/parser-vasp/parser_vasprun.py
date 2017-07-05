@@ -216,12 +216,17 @@ class MyXMLParser(ET.XMLParser):
         else:
             mydata = data
         super(MyXMLParser,self).feed(mydata)
-
+def transform2(y):
+  if '**' in y: return float('nan')
+  else: return y
 
 def getVector(el, transform = float, field = "v"):
     """ returns the vasp style vector contained in the element el (using field v).
     single elements are converted using the function convert"""
-    return [[transform(y) for y in re.split(r"\s+", x.text.strip())] for x in el.findall(field)]
+#
+#    for x in el.findall(field):
+#        for y in re.split(r"\s+", x.text.strip()):
+    return [[transform(transform2(y)) for y in re.split(r"\s+", x.text.strip())] for x in el.findall(field)]
 
 class VasprunContext(object):
     def __init__(self):
