@@ -7,7 +7,7 @@ import xml.etree.ElementTree
 import logging, sys, bisect
 import setup_paths
 from datetime import datetime
-import os, logging, re
+import os, logging, re, traceback
 from nomadcore.parser_backend import JsonParseEventsWriterBackend
 from nomadcore.local_meta_info import loadJsonFile, InfoKindEl
 import numpy as np
@@ -672,17 +672,18 @@ class VasprunContext(object):
             valType = el.attrib.get("type")
             if not meta:
                 backend.pwarn("Unknown INCAR out parameter (not registered in the meta data): %s %s %r" % (el.tag, el.attrib, el.text))
-            elif valType:
-                expectedMetaType = {
-                    'string': ['C'],
-                    'int': ['i'],
-                    'logical': ['b','C']
-                }.get(valType)
-                if not expectedMetaType:
-                    backend.pwarn("Unknown value type %s encountered in INCAR out: %s %s %r" % (valType, el.tag, el.attrib, el.text))
-                elif not meta.get('dtypeStr') in expectedMetaType:
-                    backend.pwarn("type mismatch between meta data %s and INCAR type %s for %s %s %r" % ( meta.get('dtypeStr'), valType, el.tag, el.attrib, el.text))
-                else:
+            else:
+                if valType:
+                    expectedMetaType = {
+                        'string': ['C'],
+                        'int': ['i'],
+                        'logical': ['b','C']
+                    }.get(valType)
+                    if not expectedMetaType:
+                        backend.pwarn("Unknown value type %s encountered in INCAR out: %s %s %r" % (valType, el.tag, el.attrib, el.text))
+                    elif not meta.get('dtypeStr') in expectedMetaType:
+                        backend.pwarn("type mismatch between meta data %s and INCAR type %s for %s %s %r" % ( meta.get('dtypeStr'), valType, el.tag, el.attrib, el.text))
+                try:
                     shape = meta.get("shape", None)
                     dtypeStr = meta.get("dtypeStr", None)
                     converter = metaTypeTransformers.get(dtypeStr)
@@ -693,6 +694,27 @@ class VasprunContext(object):
                         backend.addValue(meta["name"], [converter(x) for x in vals])
                     else:
                         backend.addValue(meta["name"], converter(el.text))
+                except:
+                    backend.pwarn("Exception trying to handle incarOut %s: %s" % (name, traceback.format_exc()))
+                if name == 'ENMAX' or name == 'PREC':
+                    if name =='ENMAX': self.enmax=converter(el.text)
+                    if name =='PREC' : 
+                      if 'acc' in converter(el.text):
+                        self.prec=1.3
+                      else:
+                        self.prec=1.0                      
+                    try:
+                       self.prec
+                       try:
+                          self.enmax
+                          backend.openNonOverlappingSection("section_basis_set_cell_dependent")
+                          backend.addValue("basis_set_planewave_cutoff", self.enmax*self.prec)
+                          backend.closeNonOverlappingSection("section_basis_set_cell_dependent")
+                       except AttributeError:
+                          backend.pwarn("Missing ENMAX for calculating plane wave basis cut off ")
+                    except AttributeError:
+                       backend.pwarn("Missing PREC for calculating plane wave basis cut off ")  
+
                 if name == 'GGA':
                     fMap = {
                         '91': ['GGA_X_PW91', 'GGA_C_PW91'],
