@@ -714,19 +714,7 @@ class VasprunContext(object):
                       if 'acc' in converter(el.text):
                         self.prec=1.3
                       else:
-                        self.prec=1.0                      
-                    try:
-                       self.prec
-                       try:
-                          self.enmax
-                          backend.openNonOverlappingSection("section_basis_set_cell_dependent")
-                          backend.addValue("basis_set_planewave_cutoff", self.enmax*self.prec)
-                          backend.closeNonOverlappingSection("section_basis_set_cell_dependent")
-                       except AttributeError:
-                          backend.pwarn("Missing ENMAX for calculating plane wave basis cut off ")
-                    except AttributeError:
-                       backend.pwarn("Missing PREC for calculating plane wave basis cut off ")  
-
+                        self.prec=1.0
                 if name == 'GGA':
                     fMap = {
                         '91': ['GGA_X_PW91', 'GGA_C_PW91'],
@@ -764,6 +752,23 @@ class VasprunContext(object):
 
     def onEnd_parameters(self, parser, event, element, pathStr):
         self.separatorScan(element, parser.backend)
+        try:
+           self.prec
+           try:
+              self.enmax
+              waveCut = backend.openNonOverlappingSection("section_basis_set_cell_dependent")
+              backend.addValue("basis_set_planewave_cutoff", eV2J(self.enmax*self.prec))
+              backend.closeNonOverlappingSection("section_basis_set_cell_dependent")
+              backend.openNonOverlappingSection("section_method_basis_set")
+              backend.addValue("mapping_section_method_basis_set_cell_dependent", waveCut)
+              backend.closeNonOverlappingSection("section_method_basis_set")
+              backend.openNonOverlappingSection("section_basis_set")
+              backend.addValue("mapping_section_basis_set_cell_dependent", waveCut)
+              backend.closeNonOverlappingSection("section_basis_set")
+           except AttributeError:
+              backend.pwarn("Missing ENMAX for calculating plane wave basis cut off ")
+        except AttributeError:
+           backend.pwarn("Missing PREC for calculating plane wave basis cut off ")  
 
     def onEnd_dos(self, parser, event, element, pathStr):
         "density of states"
