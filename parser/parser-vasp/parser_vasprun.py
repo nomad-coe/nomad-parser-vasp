@@ -374,8 +374,10 @@ class VasprunContext(object):
                 name = el.attrib.get("name", None)
                 if name == "kpointlist":
                     self.kpoints = np.asarray(getVector(el))
+                    backend.addArrayValues("k_mesh_points", self.kpoints)
                 elif name == "weights":
                     self.weights = np.asarray(getVector(el))
+                    backend.addArrayValues("k_mesh_weights", self.weights)
                 else:
                     backend.pwarn("Unknown array %s in kpoints" % name)
             else:
