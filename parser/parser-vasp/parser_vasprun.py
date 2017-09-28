@@ -582,6 +582,7 @@ class VasprunContext(object):
         nAtomTypes = None
         atomTypes = []
         labels = []
+        labels2 = None
         atomTypesDesc = []
         backend = parser.backend
         for el in element:
@@ -640,14 +641,22 @@ class VasprunContext(object):
                         else:
                             backend.pwarn("unexpected tag %s in atomtypes array in atominfo" % atomsEl.tag)
                     kindIds = []
+                    nEl={}
+                    kindLabels = []
                     for atomDesc in atomTypesDesc:
                         kindId = backend.openSection("section_method_atom_kind")
                         if 'element' in atomDesc:
+                            elName = atomDesc['element'].strip()
                             try:
-                                elNr = ase.data.chemical_symbols.index(atomDesc['element'].strip())
+                                elNr = ase.data.chemical_symbols.index(elName)
                                 backend.addValue("method_atom_kind_atom_number", elNr)
                             except:
                                 logging.exception("error finding element number for %r",atomDesc['element'].strip())
+                            nElNow = 1 + nEl.get(elName,0)
+                            nEl[elName] = nElNow
+                            elLabel = elName + (str(nElNow) if nElNow > 1 else  "")
+                            kindLabels.append(elLabel)
+                            backend.addValue("method_atom_kind_label", elLabel)
                             if "mass" in atomDesc:
                                 backend.addValue("method_atom_kind_mass", atomDesc["mass"])
                             if "valence" in atomDesc:
@@ -657,11 +666,12 @@ class VasprunContext(object):
                         kindIds.append(kindId)
                         backend.closeSection("section_method_atom_kind", kindId)
                     backend.addArrayValues("x_vasp_atom_kind_refs", np.asarray([kindIds[i-1] for i in atomTypes]))
+                    labels2 = [kindLabels[i-1] for i in atomTypes]
                 else:
                     backend.pwarn("unexpected array named %s in atominfo" % name)
             else:
                 backend.pwarn("unexpected tag %s in atominfo" % el.tag)
-        self.labels = np.asarray(labels)
+        self.labels = np.asarray(labels2) if labels2 else np.asarray(labels)
 
     def incarOutTag(self, el):
         backend = self.parser.backend
