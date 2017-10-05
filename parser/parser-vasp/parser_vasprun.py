@@ -710,7 +710,7 @@ class VasprunContext(object):
                     backend.pwarn("Exception trying to handle incarOut %s: %s" % (name, traceback.format_exc()))
                 if name == 'ENMAX' or name == 'PREC':
                     if name =='ENMAX': self.enmax=converter(el.text)
-                    if name =='PREC' : 
+                    if name =='PREC' :
                       if 'acc' in converter(el.text):
                         self.prec=1.3
                       else:
@@ -768,7 +768,7 @@ class VasprunContext(object):
            except AttributeError:
               backend.pwarn("Missing ENMAX for calculating plane wave basis cut off ")
         except AttributeError:
-           backend.pwarn("Missing PREC for calculating plane wave basis cut off ")  
+           backend.pwarn("Missing PREC for calculating plane wave basis cut off ")
 
     def onEnd_dos(self, parser, event, element, pathStr):
         "density of states"
@@ -803,16 +803,11 @@ class VasprunContext(object):
                                 dosV = dosA[:, :, 1]
 
                                 # Convert the DOS values to SI. VASP uses the
-                                # following units in the output: states/eV/cell
-                                # volume in angstrom^3
+                                # following units in the output: states/eV/angstrom^3
                                 ev_per_joule = convert_unit(1, "eV", "J")
-                                a = self.angstrom_cell[0, :]
-                                b = self.angstrom_cell[1, :]
-                                c = self.angstrom_cell[2, :]
-                                cell_volume = np.dot(a, np.cross(b, c))
-                                cell_volume_per_m_cubed = convert_unit(cell_volume, "angstrom^3", "m^3")
-                                dosV = dosV * ev_per_joule * cell_volume_per_m_cubed
-                                dosI = dosI * ev_per_joule * cell_volume_per_m_cubed
+                                a_cube_to_m_cube = convert_unit(1, "angstrom^3", "m^3")
+                                dosV = dosV * ev_per_joule * a_cube_to_m_cube
+                                dosI = dosI * ev_per_joule * a_cube_to_m_cube
 
                                 if self.vbTopE:
                                     eRef = max(self.vbTopE)
