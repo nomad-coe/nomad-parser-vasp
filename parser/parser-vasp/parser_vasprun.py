@@ -760,7 +760,7 @@ class VasprunContext(object):
               backend.addValue("basis_set_planewave_cutoff", eV2J(self.enmax*self.prec))
               backend.closeNonOverlappingSection("section_basis_set_cell_dependent")
               backend.openNonOverlappingSection("section_method_basis_set")
-              backend.addValue("mapping_section_method_basis_set_cell_dependent", waveCut)
+              backend.addValue("mapping_section_method_basis_set_cell_associated", waveCut)
               backend.closeNonOverlappingSection("section_method_basis_set")
               backend.openNonOverlappingSection("section_basis_set")
               backend.addValue("mapping_section_basis_set_cell_dependent", waveCut)
