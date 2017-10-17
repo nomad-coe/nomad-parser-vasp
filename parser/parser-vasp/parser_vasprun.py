@@ -527,6 +527,11 @@ class VasprunContext(object):
     def onStart_calculation(self, parser, event, element, pathStr):
         gIndexes = parser.tagSections[pathStr]
         self.singleConfCalcs.append(gIndexes["section_single_configuration_calculation"])
+        if self.waveCut:
+            backend.openNonOverlappingSection("section_basis_set")
+            backend.addValue("mapping_section_basis_set_cell_dependent", self.waveCut)
+            backend.closeNonOverlappingSection("section_basis_set")
+
 
     def onEnd_modeling(self, parser, event, element, pathStr):
         backend = parser.backend
@@ -756,15 +761,12 @@ class VasprunContext(object):
            self.prec
            try:
               self.enmax
-              waveCut = backend.openNonOverlappingSection("section_basis_set_cell_dependent")
+              self.waveCut = backend.openNonOverlappingSection("section_basis_set_cell_dependent")
               backend.addValue("basis_set_planewave_cutoff", eV2J(self.enmax*self.prec))
               backend.closeNonOverlappingSection("section_basis_set_cell_dependent")
               backend.openNonOverlappingSection("section_method_basis_set")
-              backend.addValue("mapping_section_method_basis_set_cell_associated", waveCut)
+              backend.addValue("mapping_section_method_basis_set_cell_associated", self.waveCut)
               backend.closeNonOverlappingSection("section_method_basis_set")
-              backend.openNonOverlappingSection("section_basis_set")
-              backend.addValue("mapping_section_basis_set_cell_dependent", waveCut)
-              backend.closeNonOverlappingSection("section_basis_set")
            except AttributeError:
               backend.pwarn("Missing ENMAX for calculating plane wave basis cut off ")
         except AttributeError:
