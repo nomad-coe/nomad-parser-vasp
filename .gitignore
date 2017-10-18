@@ -52,3 +52,6 @@ TAGS
 
 lib/
 env/
+
+# Setuptools install folder
+parser/parser-vasp/vaspparser.egg-info/

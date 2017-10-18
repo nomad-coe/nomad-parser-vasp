@@ -22,11 +22,11 @@ object VaspParser extends SimpleExternalParserGenerator(
   mainFileTypes = Seq("text/.*"),
   mainFileRe = """^\s*vasp.(?<version>[0-9.]+)\s+(?<srcDate>[0-9]+[A-Za-z]+[0-9]+)\s+\(build (?<buildDate>[^)]+)\)\s+complex\s*
 """.r,
-  cmd = Seq(DefaultPythonInterpreter.pythonExe(), "${envDir}/parsers/vasp/parser/parser-vasp/parser_vasp.py",
+  cmd = Seq(DefaultPythonInterpreter.pythonExe(), "${envDir}/parsers/vasp/parser/parser-vasp/vaspparser/parser_vasp.py",
     "--uri", "${mainFileUri}", "${mainFilePath}"),
   resList = Seq(
-    "parser-vasp/parser_vasp.py",
-    "parser-vasp/setup_paths.py",
+    "parser-vasp/vasprun/parser_vasp.py",
+    "parser-vasp/vasprun/setup_paths.py",
     "nomad_meta_info/public.nomadmetainfo.json",
     "nomad_meta_info/common.nomadmetainfo.json",
     "nomad_meta_info/meta_types.nomadmetainfo.json",
@@ -60,11 +60,14 @@ object VaspRunParser extends SimpleExternalParserGenerator(
 ?\s*<generator>
 ?\s*<i name="program" type="string">\s*vasp\s*</i>
 ?""".r,
-  cmd = Seq(DefaultPythonInterpreter.pythonExe(), "${envDir}/parsers/vasp/parser/parser-vasp/parser_vasprun.py",
+  cmd = Seq(DefaultPythonInterpreter.pythonExe(), "${envDir}/parsers/vasp/parser/parser-vasp/vaspparser/scalainterface.py",
     "${mainFileUri}", "${mainFilePath}"),
   resList = Seq(
-    "parser-vasp/parser_vasprun.py",
-    "parser-vasp/setup_paths.py",
+    "parser-vasp/vasprun/__init__.py",
+    "parser-vasp/vasprun/parser.py",
+    "parser-vasp/vasprun/vaspmainparser.py",
+    "parser-vasp/vasprun/parser_vasprun.py",
+    "parser-vasp/vasprun/setup_paths.py",
     "nomad_meta_info/public.nomadmetainfo.json",
     "nomad_meta_info/common.nomadmetainfo.json",
     "nomad_meta_info/meta_types.nomadmetainfo.json",

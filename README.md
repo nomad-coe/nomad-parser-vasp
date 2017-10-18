@@ -1,18 +1,47 @@
-# VASP Parser
+This is the main repository of the [NOMAD](https://www.nomad-coe.eu/) parser for
+[VASP](http://www.vasp.at/).
 
-This is the parser for [VASP](http://www.vasp.at/).
-It is part of the [NOMAD Laboratory](http://nomad-lab.eu).
-The official version lives at
+# Example
+```python
+    from vaspparser import VASPParser
+    import matplotlib.pyplot as mpl
 
-    git@gitlab.mpcdf.mpg.de:nomad-lab/parser-vasp.git
+    # 1. Initialize a parser with a set of default units.
+    default_units = ["eV"]
+    parser = VASPParser(default_units=default_units)
 
-you can browse it at
+    # 2. Parse a file
+    path = "path/to/main.file"
+    results = parser.parse(path)
 
-    https://gitlab.mpcdf.mpg.de/nomad-lab/parser-vasp
+    # 3. Query the results with using the id's created specifically for NOMAD.
+    scf_energies = results["energy_total_scf_iteration"]
+    mpl.plot(scf_energies)
+    mpl.show()
+```
 
-It relies on having the nomad-meta-info and the python common repositories one level higher.
-The simplest way to have this is to check out nomad-lab-base recursively:
+# Installation
+The code is python 2 and python 3 compatible. First download and install
+the nomadcore package:
 
-    git clone --recursive git@gitlab.mpcdf.mpg.de:nomad-lab/nomad-lab-base.git
+```sh
+git clone https://gitlab.mpcdf.mpg.de/nomad-lab/python-common.git
+cd python-common
+pip install -r requirements.txt
+pip install -e .
+```
 
-then this will be in parsers/vasp.
+Then download the metainfo definitions to the same folder where the
+'python-common' repository was cloned:
+
+```sh
+git clone https://gitlab.mpcdf.mpg.de/nomad-lab/nomad-meta-info.git
+```
+
+Finally download and install the parser:
+
+```sh
+git clone https://gitlab.mpcdf.mpg.de/nomad-lab/parser-vasp.git
+cd parser-vasp
+pip install -e .
+```

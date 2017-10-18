@@ -350,7 +350,6 @@ class VasprunContext(object):
         else:
             backend.addValue("electronic_structure_method", "DFT")
 
-
     def onEnd_kpoints(self, parser, event, element, pathStr):
         backend = parser.backend
         self.bands = None
@@ -377,12 +376,11 @@ class VasprunContext(object):
                     backend.addArrayValues("k_mesh_points", self.kpoints)
                 elif name == "weights":
                     self.weights = np.asarray(getVector(el))
-                    backend.addArrayValues("k_mesh_weights", self.weights)
+                    backend.addArrayValues("k_mesh_weights", self.weights.flatten())
                 else:
                     backend.pwarn("Unknown array %s in kpoints" % name)
             else:
                 backend.pwarn("Unknown tag %s in kpoints" % el.tag)
-
 
     def onEnd_structure(self, parser, event, element, pathStr):
         backend = parser.backend
@@ -400,7 +398,7 @@ class VasprunContext(object):
                             self.angstrom_cell = np.array(getVector(cellEl))
                             backend.addArrayValues("simulation_cell", np.asarray(self.cell))
                             backend.addArrayValues("configuration_periodic_dimensions", np.ones(3, dtype=bool))
-                        elif name =="rec_basis":
+                        elif name == "rec_basis":
                             pass
                         else:
                             backend.pwarn("Unexpected varray %s in crystal" % name)
@@ -420,7 +418,6 @@ class VasprunContext(object):
                 backend.pwarn("Unexpected tag in structure %s %s %r" % el.tag, el.attrib, el.text)
         if self.labels is not None:
             backend.addArrayValues("atom_labels", self.labels)
-
 
     def onEnd_eigenvalues(self, parser, event, element, pathStr):
         if pathStr != "modeling/calculation/eigenvalues":
@@ -531,7 +528,6 @@ class VasprunContext(object):
             backend.openNonOverlappingSection("section_basis_set")
             backend.addValue("mapping_section_basis_set_cell_dependent", self.waveCut)
             backend.closeNonOverlappingSection("section_basis_set")
-
 
     def onEnd_modeling(self, parser, event, element, pathStr):
         backend = parser.backend
@@ -757,6 +753,7 @@ class VasprunContext(object):
 
     def onEnd_parameters(self, parser, event, element, pathStr):
         self.separatorScan(element, parser.backend)
+        backend = parser.backend
         try:
            self.prec
            try:
@@ -979,16 +976,14 @@ class XmlParser(object):
 
 g = XmlParser.maybeGet
 
-
-metaInfoPath = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),"../../../../nomad-meta-info/meta_info/nomad_meta_info/vasp.nomadmetainfo.json"))
-metaInfoEnv, warnings = loadJsonFile(filePath = metaInfoPath, dependencyLoader = None, extraArgsHandling = InfoKindEl.ADD_EXTRA_ARGS, uri = None)
-
 parserInfo = {
   "name": "parser_vasprun",
   "version": "1.0"
 }
 
 if __name__ == "__main__":
+    metaInfoPath = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),"../../../../../nomad-meta-info/meta_info/nomad_meta_info/vasp.nomadmetainfo.json"))
+    metaInfoEnv, warnings = loadJsonFile(filePath = metaInfoPath, dependencyLoader = None, extraArgsHandling = InfoKindEl.ADD_EXTRA_ARGS, uri = None)
     superContext =  VasprunContext()
     parser = XmlParser(parserInfo, superContext)
     backend = JsonParseEventsWriterBackend(metaInfoEnv, sys.stdout)
