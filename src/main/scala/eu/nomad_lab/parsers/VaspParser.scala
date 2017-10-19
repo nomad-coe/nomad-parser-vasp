@@ -24,6 +24,7 @@ object VaspParser extends SimpleExternalParserGenerator(
 """.r,
   cmd = Seq(DefaultPythonInterpreter.pythonExe(), "${envDir}/parsers/vasp/parser/parser-vasp/vaspparser/parser_vasp.py",
     "--uri", "${mainFileUri}", "${mainFilePath}"),
+  cmdCwd = "${mainFilePath}/..",
   resList = Seq(
     "parser-vasp/vaspparser/parser_vasp.py",
     "parser-vasp/vaspparser/setup_paths.py",
@@ -62,6 +63,7 @@ object VaspRunParser extends SimpleExternalParserGenerator(
 ?""".r,
   cmd = Seq(DefaultPythonInterpreter.pythonExe(), "${envDir}/parsers/vasp/parser/parser-vasp/vaspparser/scalainterface.py",
     "${mainFileUri}", "${mainFilePath}"),
+  cmdCwd = "${mainFilePath}/..",
   resList = Seq(
     "parser-vasp/vaspparser/__init__.py",
     "parser-vasp/vaspparser/parser.py",

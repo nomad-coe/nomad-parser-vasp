@@ -6,7 +6,7 @@ from __future__ import absolute_import
 import sys
 import setup_paths
 from nomadcore.parser_backend import JsonParseEventsWriterBackend
-from VaspParser import VaspParser
+from vaspparser import VaspParser
 
 
 if __name__ == "__main__":
