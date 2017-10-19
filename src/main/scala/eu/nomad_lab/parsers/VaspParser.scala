@@ -35,7 +35,7 @@ object VaspParser extends SimpleExternalParserGenerator(
   ) ++ DefaultPythonInterpreter.commonFiles(),
   dirMap = Map(
     "parser-vasp" -> "parsers/vasp/parser/parser-vasp",
-    "nomad_meta_info" -> "../nomad-meta-info/meta_info/nomad_meta_info",
+    "nomad_meta_info" -> "nomad-meta-info/meta_info/nomad_meta_info",
     "python" -> "python-common/common/python/nomadcore"
   ) ++ DefaultPythonInterpreter.commonDirMapping()
 )
@@ -77,7 +77,7 @@ object VaspRunParser extends SimpleExternalParserGenerator(
   ) ++ DefaultPythonInterpreter.commonFiles(),
   dirMap = Map(
     "parser-vasp" -> "parsers/vasp/parser/parser-vasp",
-    "nomad_meta_info" -> "../nomad-meta-info/meta_info/nomad_meta_info",
+    "nomad_meta_info" -> "nomad-meta-info/meta_info/nomad_meta_info",
     "python" -> "python-common/common/python/nomadcore"
   ) ++ DefaultPythonInterpreter.commonDirMapping()
 )
