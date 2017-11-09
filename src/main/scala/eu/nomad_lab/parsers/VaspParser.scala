@@ -77,14 +77,15 @@ object VaspRunParser extends SimpleExternalParserGenerator(
 ?\s*<i name="program" type="string">\s*vasp\s*</i>
 ?""".r,
   cmd = Seq(DefaultPythonInterpreter.pythonExe(), "${envDir}/parsers/vasp/parser/parser-vasp/vaspparser/scalainterface.py",
-    "${mainFileUri}", "${mainFilePath}"),
+    "${mainFilePath}", "${mainFileUri}"),
   cmdCwd = "${mainFilePath}/..",
   resList = Seq(
     "parser-vasp/vaspparser/__init__.py",
     "parser-vasp/vaspparser/parser.py",
-    "parser-vasp/vaspparser/vaspmainparser.py",
     "parser-vasp/vaspparser/parser_vasprun.py",
+    "parser-vasp/vaspparser/scalainterface.py",
     "parser-vasp/vaspparser/setup_paths.py",
+    "parser-vasp/vaspparser/vaspmainparser.py",
     "nomad_meta_info/public.nomadmetainfo.json",
     "nomad_meta_info/common.nomadmetainfo.json",
     "nomad_meta_info/meta_types.nomadmetainfo.json",
