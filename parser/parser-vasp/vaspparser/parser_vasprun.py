@@ -802,11 +802,13 @@ class VasprunContext(object):
                                 dosV = dosA[:, :, 1]
 
                                 # Convert the DOS values to SI. VASP uses the
-                                # following units in the output: states/eV/angstrom^3
-                                ev_per_joule = convert_unit(1, "eV", "J")
-                                a_cube_to_m_cube = convert_unit(1, "angstrom^3", "m^3")
-                                dosV = dosV * ev_per_joule * a_cube_to_m_cube
-                                dosI = dosI * ev_per_joule * a_cube_to_m_cube
+                                # following units in the output:
+                                # states/eV/cell. This means that the volume
+                                # dependence has been introduced by multiplying
+                                # by the cell volume
+                                joule_in_ev = convert_unit(1, "eV", "J")
+                                dosV = dosV / joule_in_ev
+                                dosI = dosI / joule_in_ev
 
                                 if self.vbTopE:
                                     eRef = max(self.vbTopE)
