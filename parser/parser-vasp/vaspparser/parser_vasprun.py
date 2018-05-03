@@ -806,9 +806,10 @@ class VasprunContext(object):
                                 # states/eV/cell. This means that the volume
                                 # dependence has been introduced by multiplying
                                 # by the cell volume
+                                # the integrated dos value is the number of electrons until that energy level
+                                # and thus not directly energy dependent anymore
                                 joule_in_ev = convert_unit(1, "eV", "J")
                                 dosV = dosV / joule_in_ev
-                                dosI = dosI / joule_in_ev
 
                                 if self.vbTopE:
                                     eRef = max(self.vbTopE)
