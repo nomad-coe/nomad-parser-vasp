@@ -1,11 +1,11 @@
 # Copyright 2016-2018 Fawzi Mohamed, Lauri Himanen, Danio Brambila, Ankit Kariryaa, Henning Glawe
-# 
+#
 #   Licensed under the Apache License, Version 2.0 (the "License");
 #   you may not use this file except in compliance with the License.
 #   You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 #   Unless required by applicable law or agreed to in writing, software
 #   distributed under the License is distributed on an "AS IS" BASIS,
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -19,13 +19,12 @@ from builtins import range
 from builtins import object
 import xml.etree.ElementTree
 import logging, sys, bisect
-import setup_paths
+import vaspparser.setup_paths
 from datetime import datetime
 import os, logging, re, traceback
 from nomadcore.parser_backend import JsonParseEventsWriterBackend
 from nomadcore.local_meta_info import loadJsonFile, InfoKindEl
 import numpy as np
-import setup_paths
 from nomadcore.unit_conversion.unit_conversion import convert_unit_function
 from nomadcore.unit_conversion.unit_conversion import convert_unit
 import ase.geometry
