@@ -1,11 +1,11 @@
 # Copyright 2016-2018 Fawzi Mohamed, Lauri Himanen, Danio Brambila, Ankit Kariryaa, Henning Glawe
-# 
+#
 #   Licensed under the Apache License, Version 2.0 (the "License");
 #   you may not use this file except in compliance with the License.
 #   You may obtain a copy of the License at
-# 
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 #   Unless required by applicable law or agreed to in writing, software
 #   distributed under the License is distributed on an "AS IS" BASIS,
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,7 +15,8 @@
 import os
 import unittest
 import logging
-from vaspparser import VASPParser
+
+from vaspparser import VASPRunParserInterface
 
 
 def get_result(folder, metaname=None):
@@ -28,8 +29,8 @@ def get_result(folder, metaname=None):
             the full dictionary of results.
     """
     dirname = os.path.dirname(__file__)
-    filename = os.path.join("vasp", dirname, folder, "vasprun.xml.static")
-    parser = VASPParser(None, debug=True, log_level=logging.CRITICAL)
+    filename = os.path.join(dirname, folder, "vasprun.xml.static")
+    parser = VASPRunParserInterface(None, debug=True, log_level=logging.CRITICAL)
     results = parser.parse(filename)
 
     if metaname is None:
@@ -43,7 +44,7 @@ class TestDOS(unittest.TestCase):
     """
     @classmethod
     def setUpClass(cls):
-        cls.results = get_result("dos")
+        cls.results = get_result(os.path.join("examples", "dos"))
 
     def test_program_name(self):
         result = self.results["program_name"]

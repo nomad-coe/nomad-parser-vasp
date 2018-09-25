@@ -3,12 +3,12 @@ This is the main repository of the [NOMAD](https://www.nomad-coe.eu/) parser for
 
 # Example
 ```python
-    from vaspparser import VASPParser
+    from vaspparser import VASPRunParserInterface
     import matplotlib.pyplot as mpl
 
     # 1. Initialize a parser with a set of default units.
     default_units = ["eV"]
-    parser = VASPParser(default_units=default_units)
+    parser = VASPRunParserInterface(default_units=default_units)
 
     # 2. Parse a file
     path = "path/to/main.file"
@@ -21,7 +21,7 @@ This is the main repository of the [NOMAD](https://www.nomad-coe.eu/) parser for
 ```
 
 # Installation
-The code is python 2 and python 3 compatible. First download and install
+The code is python 3 compatible. First download and install
 the nomadcore package:
 
 ```sh

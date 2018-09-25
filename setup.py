@@ -12,7 +12,7 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-from setuptools import setup, find_packages
+from setuptools import setup
 
 
 def main():
@@ -20,10 +20,9 @@ def main():
         name='vaspparser',
         version='0.1',
         description='NOMAD parser implementation for VASP.',
-        author='Fawzi Mohamed',
+        author='Fawzi Mohamed, Lauri Himanen, Danio Brambila, Ankit Kariryaa, Henning Glawe',
         license='APACHE 2.0',
-        package_dir={'': 'parser/parser-vasp'},
-        packages=find_packages('parser/parser-vasp'),
+        package='vaspparser',
         install_requires=[
             'nomadcore'
         ],

@@ -12,27 +12,31 @@
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
 
-# coding=utf-8
 from __future__ import division
-from builtins import map
 from builtins import range
 from builtins import object
 import xml.etree.ElementTree
-import logging, sys, bisect
-import vaspparser.setup_paths
+import sys
+import bisect
 from datetime import datetime
-import os, logging, re, traceback
-from nomadcore.parser_backend import JsonParseEventsWriterBackend
-from nomadcore.local_meta_info import loadJsonFile, InfoKindEl
+import os
+import re
+import traceback
 import numpy as np
-from nomadcore.unit_conversion.unit_conversion import convert_unit_function
-from nomadcore.unit_conversion.unit_conversion import convert_unit
 import ase.geometry
 import ase.data
 from math import pi
+import xml.etree.ElementTree as ET
+import logging
+
+from nomadcore.parser_backend import JsonParseEventsWriterBackend
+from nomadcore.local_meta_info import loadJsonFile, InfoKindEl
+from nomadcore.unit_conversion.unit_conversion import convert_unit_function
+from nomadcore.unit_conversion.unit_conversion import convert_unit
 
 eV2J = convert_unit_function("eV", "J")
 eV2JV = np.vectorize(eV2J)
+
 
 def crystal_structure_from_cell(cell, eps=1e-4):
     """Return the crystal structure as a string calculated from the cell.
@@ -60,7 +64,7 @@ def crystal_structure_from_cell(cell, eps=1e-4):
           abs(angles[1:] - pi / 2).max() < eps):
         return 'monoclinic'
     else:
-       raise ValueError('Cannot find crystal structure')
+        raise ValueError('Cannot find crystal structure')
 
 
 special_points = {
@@ -177,19 +181,26 @@ def get_special_points(cell, eps=1e-4):
             'Y1': [0, 0, -1 / 2],
             'Z': [1 / 2, 0, 0]}
 
+
 def findLabel(labels, value):
     for k, v in labels.items():
         if np.all(np.abs(v-value) < 1.e-5):
             return k
     return "?"
 
+
 def secondsFromEpoch(date):
-    epoch = datetime(1970,1,1)
-    ts=date-epoch
+    epoch = datetime(1970, 1, 1)
+    ts = date-epoch
     return ts.seconds + ts.microseconds/1000.0
 
-trueRe = re.compile(r"\s*(?:\.?[Tt](?:[Rr][Uu][Ee])?\.?|1|[Yy](?:[Ee][Ss])?|[Jj][Aa]?)\s*$")
-falseRe = re.compile(r"\s*(?:\.?[fF](?:[Aa][Ll][Ss][Ee])?\.?|0|[Nn](?:[Oo]|[Ee][Ii][Nn])?)\s*$")
+
+trueRe = re.compile(
+    r"\s*(?:\.?[Tt](?:[Rr][Uu][Ee])?\.?|1|[Yy](?:[Ee][Ss])?|[Jj][Aa]?)\s*$")
+falseRe = re.compile(
+    r"\s*(?:\.?[fF](?:[Aa][Ll][Ss][Ee])?\.?|0|[Nn](?:[Oo]|[Ee][Ii][Nn])?)\s*$")
+
+
 def toBool(value):
     if falseRe.match(value):
         return False
@@ -199,6 +210,7 @@ def toBool(value):
         backend.pwarn("Unexpected value for boolean field: %s" % (value))
         return None
 
+
 metaTypeTransformers = {
     'C': lambda x: x.strip(),
     'i': lambda x: int(x.strip()),
@@ -207,13 +219,11 @@ metaTypeTransformers = {
 }
 
 
-import xml.etree.ElementTree as ET
-
 class MyXMLParser(ET.XMLParser):
 
     rx = re.compile("&#([0-9]+);|&#x([0-9a-fA-F]+);")
 
-    def feed(self,data):
+    def feed(self, data):
         m = self.rx.search(data)
         if m is not None:
             target = m.group(1)
@@ -228,12 +238,17 @@ class MyXMLParser(ET.XMLParser):
                 mydata = data[:mstart] + data[mend:]
         else:
             mydata = data
-        super(MyXMLParser,self).feed(mydata)
-def transform2(y):
-  if '**' in y: return float('nan')
-  else: return y
+        super(MyXMLParser, self).feed(mydata)
 
-def getVector(el, transform = float, field = "v"):
+
+def transform2(y):
+    if '**' in y:
+        return float('nan')
+    else:
+        return y
+
+
+def getVector(el, transform=float, field="v"):
     """ returns the vasp style vector contained in the element el (using field v).
     single elements are converted using the function convert"""
 #
@@ -241,8 +256,10 @@ def getVector(el, transform = float, field = "v"):
 #        for y in re.split(r"\s+", x.text.strip()):
     return [[transform(transform2(y)) for y in re.split(r"\s+", x.text.strip())] for x in el.findall(field)]
 
+
 class VasprunContext(object):
-    def __init__(self):
+    def __init__(self, logger=None):
+        self.logger = logger
         self.parser = None
         self.bands = None
         self.kpoints = None
@@ -257,6 +274,9 @@ class VasprunContext(object):
         self.eFermi = None
         self.cell = None
         self.angstrom_cell = None
+
+        if self.logger is None:
+            logger = logging.getLogger(__name__)
 
     sectionMap = {
         "modeling": ["section_run", "section_method"],
@@ -286,12 +306,15 @@ class VasprunContext(object):
         if date:
             pdate = datetime.strptime(date.strip(), "%Y %m %d")
         if pdate and time:
-            pdate = datetime.combine(pdate.date(), datetime.strptime(time.strip(), "%H:%M:%S").timetz())
+            pdate = datetime.combine(pdate.date(), datetime.strptime(
+                time.strip(), "%H:%M:%S").timetz())
         if pdate:
-            backend.addValue("program_compilation_datetime", secondsFromEpoch(pdate))
+            backend.addValue("program_compilation_datetime",
+                             secondsFromEpoch(pdate))
         for i in element:
             if i.tag != "i" or not i.attrib.get("name") in set(["program", "version", "subversion", "platform", "program_version", "date", "time"]):
-                backend.pwarn("unexpected tag %s %s %r in generator" % (i.tag, i.attrib, i.text))
+                backend.pwarn("unexpected tag %s %s %r in generator" %
+                              (i.tag, i.attrib, i.text))
 
     def onEnd_incar(self, parser, event, element, pathStr):
         backend = parser.backend
@@ -301,32 +324,38 @@ class VasprunContext(object):
         nsw = 0
         for el in element:
             if (el.tag != "i"):
-                backend.pwarn("unexpected tag %s %s %r in incar" % (el.tag, el.attrib, el.text))
+                backend.pwarn("unexpected tag %s %s %r in incar" %
+                              (el.tag, el.attrib, el.text))
             else:
                 name = el.attrib.get("name", None)
                 meta = metaEnv['x_vasp_incar_' + name]
                 valType = el.attrib.get("type")
                 if not meta:
-                    backend.pwarn("Unknown INCAR parameter (not registered in the meta data): %s %s %r" % (el.tag, el.attrib, el.text))
+                    backend.pwarn("Unknown INCAR parameter (not registered in the meta data): %s %s %r" % (
+                        el.tag, el.attrib, el.text))
                 elif valType:
                     expectedMetaType = {
                         'string': ['C'],
                         'int': ['i'],
-                        'logical': ['b','C']
+                        'logical': ['b', 'C']
                     }.get(valType)
                     if not expectedMetaType:
-                        backend.pwarn("Unknown value type %s encountered in INCAR: %s %s %r" % (valType, el.tag, el.attrib, el.text))
+                        backend.pwarn("Unknown value type %s encountered in INCAR: %s %s %r" % (
+                            valType, el.tag, el.attrib, el.text))
                     elif not meta.get('dtypeStr') in expectedMetaType:
-                        backend.pwarn("type mismatch between meta data %s and INCAR type %s for %s %s %r" % ( meta.get('dtypeStr'), valType, el.tag, el.attrib, el.text))
+                        backend.pwarn("type mismatch between meta data %s and INCAR type %s for %s %s %r" % (
+                            meta.get('dtypeStr'), valType, el.tag, el.attrib, el.text))
                     else:
                         shape = meta.get("shape", None)
                         dtypeStr = meta.get("dtypeStr", None)
                         converter = metaTypeTransformers.get(dtypeStr)
                         if not converter:
-                            backend.pwarn("could not find converter for dtypeStr %s when handling meta info %s" % (dtypeStr, ))
+                            backend.pwarn(
+                                "could not find converter for dtypeStr %s when handling meta info %s" % (dtypeStr, ))
                         elif shape:
                             vals = re.split("\s+", el.text.strip())
-                            backend.addValue(meta["name"], [converter(x) for x in vals])
+                            backend.addValue(
+                                meta["name"], [converter(x) for x in vals])
                         else:
                             backend.addValue(meta["name"], converter(el.text))
                     if name == 'GGA':
@@ -338,12 +367,15 @@ class VasprunContext(object):
                         }
                         functs = fMap.get(el.text.strip(), None)
                         if not functs:
-                            backend.pwarn("Unknown XC functional %s" % el.text.strip())
+                            backend.pwarn("Unknown XC functional %s" %
+                                          el.text.strip())
                         else:
                             for f in functs:
-                                backend.openNonOverlappingSection("section_XC_functionals")
+                                backend.openNonOverlappingSection(
+                                    "section_XC_functionals")
                                 backend.addValue("XC_functional_name", f)
-                                backend.closeNonOverlappingSection("section_XC_functionals")
+                                backend.closeNonOverlappingSection(
+                                    "section_XC_functionals")
                     elif name == "ISPIN":
                         self.ispin = int(el.text.strip())
                     elif name == "LDAU":
@@ -372,10 +404,11 @@ class VasprunContext(object):
             if el.tag == "generation":
                 param = el.attrib.get("param", None)
                 if param:
-                    backend.addValue("x_vasp_k_points_generation_method", param)
+                    backend.addValue(
+                        "x_vasp_k_points_generation_method", param)
                 if param == "listgenerated":
                     self.bands = {
-                        "divisions": g(el,"i/[@name='divisions']", None),
+                        "divisions": g(el, "i/[@name='divisions']", None),
                         "points": getVector(el)
                     }
                 elif param == "Monkhorst-Pack":
@@ -389,7 +422,8 @@ class VasprunContext(object):
                     backend.addArrayValues("k_mesh_points", self.kpoints)
                 elif name == "weights":
                     self.weights = np.asarray(getVector(el))
-                    backend.addArrayValues("k_mesh_weights", self.weights.flatten())
+                    backend.addArrayValues(
+                        "k_mesh_weights", self.weights.flatten())
                 else:
                     backend.pwarn("Unknown array %s in kpoints" % name)
             else:
@@ -407,28 +441,37 @@ class VasprunContext(object):
                         name = cellEl.attrib.get("name", None)
                         if name == "basis":
                             conv = convert_unit_function("angstrom", "m")
-                            self.cell = getVector(cellEl, lambda x: conv(float(x)))
+                            self.cell = getVector(
+                                cellEl, lambda x: conv(float(x)))
                             self.angstrom_cell = np.array(getVector(cellEl))
-                            backend.addArrayValues("simulation_cell", np.asarray(self.cell))
-                            backend.addArrayValues("configuration_periodic_dimensions", np.ones(3, dtype=bool))
+                            backend.addArrayValues(
+                                "simulation_cell", np.asarray(self.cell))
+                            backend.addArrayValues(
+                                "configuration_periodic_dimensions", np.ones(3, dtype=bool))
                         elif name == "rec_basis":
                             pass
                         else:
-                            backend.pwarn("Unexpected varray %s in crystal" % name)
+                            backend.pwarn(
+                                "Unexpected varray %s in crystal" % name)
                     elif cellEl.tag == "i":
                         if cellEl.attrib.get("name") != "volume":
-                            backend.pwarn("Unexpected i value %s in crystal" % cellEl.attrib)
+                            backend.pwarn(
+                                "Unexpected i value %s in crystal" % cellEl.attrib)
                     else:
-                        backend.pwarn("Unexpected tag %s %s %r in crystal" % (cellEl.tag, cellEl.attrib, cellEl.text))
+                        backend.pwarn("Unexpected tag %s %s %r in crystal" % (
+                            cellEl.tag, cellEl.attrib, cellEl.text))
             elif el.tag == "varray":
                 name = el.attrib.get("name", None)
                 if name == "positions":
                     pos = getVector(el)
-                    backend.addArrayValues("atom_positions", np.dot(np.asarray(pos), self.cell))
+                    backend.addArrayValues(
+                        "atom_positions", np.dot(np.asarray(pos), self.cell))
                 else:
-                    backend.pwarn("Unexpected varray in structure %s" % el.attrib)
+                    backend.pwarn(
+                        "Unexpected varray in structure %s" % el.attrib)
             else:
-                backend.pwarn("Unexpected tag in structure %s %s %r" % el.tag, el.attrib, el.text)
+                backend.pwarn("Unexpected tag in structure %s %s %r" %
+                              el.tag, el.attrib, el.text)
         if self.labels is not None:
             backend.addArrayValues("atom_labels", self.labels)
 
@@ -454,18 +497,24 @@ class VasprunContext(object):
                                 for kEl in spinEl:
                                     if kEl.tag == "set":
                                         ik += 1
-                                        bands = np.asarray(getVector(kEl, field = "r"))
+                                        bands = np.asarray(
+                                            getVector(kEl, field="r"))
                                         if eigenvalues is None:
-                                            eigenvalues = np.zeros((self.ispin, self.kpoints.shape[0],  bands.shape[0]), dtype = float)
-                                            occupation = np.zeros((self.ispin, self.kpoints.shape[0],  bands.shape[0]), dtype = float)
-                                        eigenvalues[isp, ik] = bands[:,0]
-                                        occupation[isp, ik] = bands[:,1]
+                                            eigenvalues = np.zeros(
+                                                (self.ispin, self.kpoints.shape[0],  bands.shape[0]), dtype=float)
+                                            occupation = np.zeros(
+                                                (self.ispin, self.kpoints.shape[0],  bands.shape[0]), dtype=float)
+                                        eigenvalues[isp, ik] = bands[:, 0]
+                                        occupation[isp, ik] = bands[:, 1]
                                     else:
-                                        backend.pwarn("unexpected tag %s in k array of the eigenvalues" % kEl.tag)
+                                        backend.pwarn(
+                                            "unexpected tag %s in k array of the eigenvalues" % kEl.tag)
                             else:
-                                backend.pwarn("unexpected tag %s in spin array of the eigenvalues" % spinEl.tag)
+                                backend.pwarn(
+                                    "unexpected tag %s in spin array of the eigenvalues" % spinEl.tag)
                     else:
-                        backend.pwarn("unexpected tag %s in array of the eigenvalues" % arrEl.tag)
+                        backend.pwarn(
+                            "unexpected tag %s in array of the eigenvalues" % arrEl.tag)
                 if eigenvalues is not None:
 
                     ev = eV2JV(eigenvalues)
@@ -475,8 +524,9 @@ class VasprunContext(object):
                         vbTopE.append(float('-inf'))
                         ebMinE.append(float('inf'))
                         for ik in range(occupation.shape[1]):
-                            ebIndex = bisect.bisect_right(-occupation[ispin, ik, :], -0.5) - 1
-                            vbTopIndex = ebIndex -1
+                            ebIndex = bisect.bisect_right(
+                                -occupation[ispin, ik, :], -0.5) - 1
+                            vbTopIndex = ebIndex - 1
                             if vbTopIndex >= 0:
                                 vbTopK = ev[ispin, ik, vbTopIndex]
                                 if vbTopK > vbTopE[ispin]:
@@ -487,47 +537,70 @@ class VasprunContext(object):
                                     ebMinE[ispin] = ebMinK
                     self.vbTopE = vbTopE
                     self.ebMinE = ebMinE
-                    backend.addArrayValues("energy_reference_highest_occupied", np.array(vbTopE))
-                    backend.addArrayValues("energy_reference_lowest_unoccupied", np.array(ebMinE))
+                    backend.addArrayValues(
+                        "energy_reference_highest_occupied", np.array(vbTopE))
+                    backend.addArrayValues(
+                        "energy_reference_lowest_unoccupied", np.array(ebMinE))
                     if self.bands:
                         divisions = int(self.bands['divisions'])
                         backend.openNonOverlappingSection("section_k_band")
                         nsegments = self.kpoints.shape[0] // divisions
-                        kpt = np.reshape(self.kpoints, (nsegments, divisions, 3))
-                        energies = np.reshape(ev, (self.ispin, nsegments, divisions ,  bands.shape[0]))
-                        occ = np.reshape(occupation, (self.ispin, nsegments, divisions, bands.shape[0]))
+                        kpt = np.reshape(
+                            self.kpoints, (nsegments, divisions, 3))
+                        energies = np.reshape(
+                            ev, (self.ispin, nsegments, divisions,  bands.shape[0]))
+                        occ = np.reshape(
+                            occupation, (self.ispin, nsegments, divisions, bands.shape[0]))
                         for isegment in range(nsegments):
-                            backend.openNonOverlappingSection("section_k_band_segment")
-                            backend.addArrayValues("band_energies", energies[:, isegment, :, :])
-                            backend.addArrayValues("band_occupations", occ[:, isegment, :, :])
-                            backend.addArrayValues("band_k_points", kpt[isegment])
+                            backend.openNonOverlappingSection(
+                                "section_k_band_segment")
+                            backend.addArrayValues(
+                                "band_energies", energies[:, isegment, :, :])
+                            backend.addArrayValues(
+                                "band_occupations", occ[:, isegment, :, :])
+                            backend.addArrayValues(
+                                "band_k_points", kpt[isegment])
                             # "band_segm_labels"
-                            backend.addArrayValues("band_segm_start_end", np.asarray([kpt[isegment, 0], kpt[isegment, divisions - 1]]))
-                            backend.closeNonOverlappingSection("section_k_band_segment")
+                            backend.addArrayValues("band_segm_start_end", np.asarray(
+                                [kpt[isegment, 0], kpt[isegment, divisions - 1]]))
+                            backend.closeNonOverlappingSection(
+                                "section_k_band_segment")
                         backend.closeNonOverlappingSection("section_k_band")
-                        backend.openNonOverlappingSection("section_k_band_normalized")
+                        backend.openNonOverlappingSection(
+                            "section_k_band_normalized")
                         specialPoints = {}
                         try:
-                            specialPoints = get_special_points(convert_unit_function("m","angstrom")(self.cell))
-                        except:
-                            logging.exception("failed to get special points")
+                            specialPoints = get_special_points(
+                                convert_unit_function("m", "angstrom")(self.cell))
+                        except Exception as e:
+                            self.logger.error("failed to get special points", exc_info=e)
                         for isegment in range(nsegments):
-                            backend.openNonOverlappingSection("section_k_band_segment_normalized")
-                            backend.addArrayValues("band_energies_normalized", energies[:, isegment, :, :] - max(self.vbTopE))
-                            backend.addArrayValues("band_occupations_normalized", occ[:, isegment, :, :])
-                            backend.addArrayValues("band_k_points_normalized", kpt[isegment])
-                            backend.addArrayValues("band_segm_start_end_normalized", np.asarray([kpt[isegment, 0], kpt[isegment, divisions - 1]]))
+                            backend.openNonOverlappingSection(
+                                "section_k_band_segment_normalized")
+                            backend.addArrayValues(
+                                "band_energies_normalized", energies[:, isegment, :, :] - max(self.vbTopE))
+                            backend.addArrayValues(
+                                "band_occupations_normalized", occ[:, isegment, :, :])
+                            backend.addArrayValues(
+                                "band_k_points_normalized", kpt[isegment])
+                            backend.addArrayValues("band_segm_start_end_normalized", np.asarray(
+                                [kpt[isegment, 0], kpt[isegment, divisions - 1]]))
                             backend.addValue("band_segm_labels_normalized",
                                              [findLabel(specialPoints, kpt[isegment, 0]),
                                               findLabel(specialPoints, kpt[isegment, divisions - 1])])
-                            backend.closeNonOverlappingSection("section_k_band_segment_normalized")
+                            backend.closeNonOverlappingSection(
+                                "section_k_band_segment_normalized")
 
-                        backend.closeNonOverlappingSection("section_k_band_normalized")
+                        backend.closeNonOverlappingSection(
+                            "section_k_band_normalized")
                     else:
-                        backend.openNonOverlappingSection("section_eigenvalues")
+                        backend.openNonOverlappingSection(
+                            "section_eigenvalues")
                         backend.addArrayValues("eigenvalues_values", ev)
-                        backend.addArrayValues("eigenvalues_occupation", occupation)
-                        backend.closeNonOverlappingSection("section_eigenvalues")
+                        backend.addArrayValues(
+                            "eigenvalues_occupation", occupation)
+                        backend.closeNonOverlappingSection(
+                            "section_eigenvalues")
             else:
                 backend.pwarn("unexpected tag %s in the eigenvalues" % el.tag)
 
@@ -536,10 +609,12 @@ class VasprunContext(object):
 
     def onStart_calculation(self, parser, event, element, pathStr):
         gIndexes = parser.tagSections[pathStr]
-        self.singleConfCalcs.append(gIndexes["section_single_configuration_calculation"])
+        self.singleConfCalcs.append(
+            gIndexes["section_single_configuration_calculation"])
         if self.waveCut:
             backend.openNonOverlappingSection("section_basis_set")
-            backend.addValue("mapping_section_basis_set_cell_dependent", self.waveCut)
+            backend.addValue(
+                "mapping_section_basis_set_cell_dependent", self.waveCut)
             backend.closeNonOverlappingSection("section_basis_set")
 
     def onEnd_modeling(self, parser, event, element, pathStr):
@@ -555,7 +630,8 @@ class VasprunContext(object):
         backend.closeSection("section_sampling_method", samplingGIndex)
         frameSequenceGIndex = backend.openSection("section_frame_sequence")
         backend.addValue("frame_sequence_to_sampling_ref", samplingGIndex)
-        backend.addArrayValues("frame_sequence_local_frames_ref", np.asarray(self.singleConfCalcs))
+        backend.addArrayValues(
+            "frame_sequence_local_frames_ref", np.asarray(self.singleConfCalcs))
         backend.closeSection("section_frame_sequence", frameSequenceGIndex)
 
     def onEnd_calculation(self, parser, event, element, pathStr):
@@ -563,9 +639,11 @@ class VasprunContext(object):
         fConv = convert_unit_function("eV/angstrom", "N")
         pConv = convert_unit_function("eV/angstrom^3", "Pa")
         backend = parser.backend
-        backend.addValue("single_configuration_calculation_to_system_ref", self.lastSystemDescription)
+        backend.addValue(
+            "single_configuration_calculation_to_system_ref", self.lastSystemDescription)
         gIndexes = parser.tagSections["/modeling"]
-        backend.addValue("single_configuration_to_calculation_method_ref", gIndexes["section_method"])
+        backend.addValue(
+            "single_configuration_to_calculation_method_ref", gIndexes["section_method"])
         for el in element:
             if el.tag == "energy":
                 for enEl in el:
@@ -581,7 +659,8 @@ class VasprunContext(object):
                             value = eConv(float(enEl.text.strip()))
                             backend.addValue("energy_total_T0", value)
                         else:
-                            backend.pwarn("Unexpected i tag with name %s in energy section" % name)
+                            backend.pwarn(
+                                "Unexpected i tag with name %s in energy section" % name)
                     elif enEl.tag == "varray":
                         name = enEl.attrib.get("name", None)
                         if name == "forces":
@@ -615,13 +694,15 @@ class VasprunContext(object):
                         elif atomsEl.tag == "set":
                             for atomsLine in atomsEl:
                                 if atomsLine.tag != "rc":
-                                    backend.pwarn("unexpected tag %s in atoms array in atominfo" % atomsLine.tag)
+                                    backend.pwarn(
+                                        "unexpected tag %s in atoms array in atominfo" % atomsLine.tag)
                                 else:
                                     line = atomsLine.findall("c")
                                     labels.append(line[0].text.strip())
                                     atomTypes.append(int(line[1].text.strip()))
                         else:
-                            backend.pwarn("unexpected tag %s in atoms array in atominfo" % atomsEl.tag)
+                            backend.pwarn(
+                                "unexpected tag %s in atoms array in atominfo" % atomsEl.tag)
                 elif name == "atomtypes":
                     keys = []
                     fieldTypes = []
@@ -630,14 +711,18 @@ class VasprunContext(object):
                             pass
                         elif atomsEl.tag == "field":
                             keys.append(atomsEl.text.strip())
-                            fieldTypes.append(atomsEl.attrib.get("type", "float"))
+                            fieldTypes.append(
+                                atomsEl.attrib.get("type", "float"))
                         elif atomsEl.tag == "set":
-                            expectedKeys = ["atomspertype", "element", "mass", "valence", "pseudopotential"]
+                            expectedKeys = ["atomspertype", "element",
+                                            "mass", "valence", "pseudopotential"]
                             if keys != expectedKeys:
-                                backend.pwarn("unexpected fields in atomtype: %s vs %s" % (keys, expectedKeys))
+                                backend.pwarn(
+                                    "unexpected fields in atomtype: %s vs %s" % (keys, expectedKeys))
                             for atomsLine in atomsEl:
                                 if atomsLine.tag != "rc":
-                                    backend.pwarn("unexpected tag %s in atoms array in atominfo" % atomsLine.tag)
+                                    backend.pwarn(
+                                        "unexpected tag %s in atoms array in atominfo" % atomsLine.tag)
                                 else:
                                     line = atomsLine.findall("c")
                                     typeDesc = {}
@@ -653,36 +738,48 @@ class VasprunContext(object):
                                         typeDesc[k] = value
                                     atomTypesDesc.append(typeDesc)
                         else:
-                            backend.pwarn("unexpected tag %s in atomtypes array in atominfo" % atomsEl.tag)
+                            backend.pwarn(
+                                "unexpected tag %s in atomtypes array in atominfo" % atomsEl.tag)
                     kindIds = []
-                    nEl={}
+                    nEl = {}
                     kindLabels = []
                     for atomDesc in atomTypesDesc:
-                        kindId = backend.openSection("section_method_atom_kind")
+                        kindId = backend.openSection(
+                            "section_method_atom_kind")
                         if 'element' in atomDesc:
                             elName = atomDesc['element'].strip()
                             try:
                                 elNr = ase.data.chemical_symbols.index(elName)
-                                backend.addValue("method_atom_kind_atom_number", elNr)
-                            except:
-                                logging.exception("error finding element number for %r",atomDesc['element'].strip())
-                            nElNow = 1 + nEl.get(elName,0)
+                                backend.addValue(
+                                    "method_atom_kind_atom_number", elNr)
+                            except Exception as e:
+                                self.logger.error(
+                                    "error finding element number for %r" % atomDesc['element'].strip(),
+                                    exc_info=e)
+                            nElNow = 1 + nEl.get(elName, 0)
                             nEl[elName] = nElNow
-                            elLabel = elName + (str(nElNow) if nElNow > 1 else  "")
+                            elLabel = elName + \
+                                (str(nElNow) if nElNow > 1 else "")
                             kindLabels.append(elLabel)
                             backend.addValue("method_atom_kind_label", elLabel)
                             if "mass" in atomDesc:
-                                backend.addValue("method_atom_kind_mass", atomDesc["mass"])
+                                backend.addValue(
+                                    "method_atom_kind_mass", atomDesc["mass"])
                             if "valence" in atomDesc:
-                                backend.addValue("method_atom_kind_explicit_electrons", atomDesc["valence"])
+                                backend.addValue(
+                                    "method_atom_kind_explicit_electrons", atomDesc["valence"])
                             if "pseudopotential" in atomDesc:
-                                backend.addValue("method_atom_kind_pseudopotential_name", atomDesc["pseudopotential"])
+                                backend.addValue(
+                                    "method_atom_kind_pseudopotential_name", atomDesc["pseudopotential"])
                         kindIds.append(kindId)
-                        backend.closeSection("section_method_atom_kind", kindId)
-                    backend.addArrayValues("x_vasp_atom_kind_refs", np.asarray([kindIds[i-1] for i in atomTypes]))
+                        backend.closeSection(
+                            "section_method_atom_kind", kindId)
+                    backend.addArrayValues("x_vasp_atom_kind_refs", np.asarray(
+                        [kindIds[i-1] for i in atomTypes]))
                     labels2 = [kindLabels[i-1] for i in atomTypes]
                 else:
-                    backend.pwarn("unexpected array named %s in atominfo" % name)
+                    backend.pwarn(
+                        "unexpected array named %s in atominfo" % name)
             else:
                 backend.pwarn("unexpected tag %s in atominfo" % el.tag)
         self.labels = np.asarray(labels2) if labels2 else np.asarray(labels)
@@ -691,64 +788,75 @@ class VasprunContext(object):
         backend = self.parser.backend
         metaEnv = self.parser.backend.metaInfoEnv()
         if (el.tag != "i"):
-            backend.pwarn("unexpected tag %s %s %r in incar" % (el.tag, el.attrib, el.text))
+            backend.pwarn("unexpected tag %s %s %r in incar" %
+                          (el.tag, el.attrib, el.text))
         else:
             name = el.attrib.get("name", None)
             meta = metaEnv['x_vasp_incarOut_' + name]
             valType = el.attrib.get("type")
             if not meta:
-                backend.pwarn("Unknown INCAR out parameter (not registered in the meta data): %s %s %r" % (el.tag, el.attrib, el.text))
+                backend.pwarn("Unknown INCAR out parameter (not registered in the meta data): %s %s %r" % (
+                    el.tag, el.attrib, el.text))
             else:
                 if valType:
                     expectedMetaType = {
                         'string': ['C'],
                         'int': ['i'],
-                        'logical': ['b','C']
+                        'logical': ['b', 'C']
                     }.get(valType)
                     if not expectedMetaType:
-                        backend.pwarn("Unknown value type %s encountered in INCAR out: %s %s %r" % (valType, el.tag, el.attrib, el.text))
+                        backend.pwarn("Unknown value type %s encountered in INCAR out: %s %s %r" % (
+                            valType, el.tag, el.attrib, el.text))
                     elif not meta.get('dtypeStr') in expectedMetaType:
-                        backend.pwarn("type mismatch between meta data %s and INCAR type %s for %s %s %r" % ( meta.get('dtypeStr'), valType, el.tag, el.attrib, el.text))
+                        backend.pwarn("type mismatch between meta data %s and INCAR type %s for %s %s %r" % (
+                            meta.get('dtypeStr'), valType, el.tag, el.attrib, el.text))
                 try:
                     shape = meta.get("shape", None)
                     dtypeStr = meta.get("dtypeStr", None)
                     converter = metaTypeTransformers.get(dtypeStr)
                     if not converter:
-                        backend.pwarn("could not find converter for dtypeStr %s when handling meta info %s" % (dtypeStr, ))
+                        backend.pwarn(
+                            "could not find converter for dtypeStr %s when handling meta info %s" % (dtypeStr, ))
                     elif shape:
                         vals = re.split("\s+", el.text.strip())
-                        backend.addValue(meta["name"], [converter(x) for x in vals])
+                        backend.addValue(
+                            meta["name"], [converter(x) for x in vals])
                     else:
                         backend.addValue(meta["name"], converter(el.text))
                 except:
-                    backend.pwarn("Exception trying to handle incarOut %s: %s" % (name, traceback.format_exc()))
+                    backend.pwarn("Exception trying to handle incarOut %s: %s" % (
+                        name, traceback.format_exc()))
                 if name == 'ENMAX' or name == 'PREC':
-                    if name =='ENMAX': self.enmax=converter(el.text)
-                    if name =='PREC' :
-                      if 'acc' in converter(el.text):
-                        self.prec=1.3
-                      else:
-                        self.prec=1.0
+                    if name == 'ENMAX':
+                        self.enmax = converter(el.text)
+                    if name == 'PREC':
+                        if 'acc' in converter(el.text):
+                            self.prec = 1.3
+                        else:
+                            self.prec = 1.0
                 if name == 'GGA':
                     fMap = {
                         '91': ['GGA_X_PW91', 'GGA_C_PW91'],
                         'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
                         'RP': ['GGA_X_RPBE', 'GGA_C_PBE'],
                         'PS': ['GGA_C_PBE_SOL', 'GGA_X_PBE_SOL'],
-                        '--': ['GGA_X_PBE', 'GGA_C_PBE'] # should check potcar
+                        '--': ['GGA_X_PBE', 'GGA_C_PBE']  # should check potcar
                     }
                     functs = fMap.get(el.text.strip(), None)
                     if not functs:
-                        backend.pwarn("Unknown XC functional %s" % el.text.strip())
+                        backend.pwarn("Unknown XC functional %s" %
+                                      el.text.strip())
                     else:
                         for f in functs:
-                            backend.openNonOverlappingSection("section_XC_functionals")
+                            backend.openNonOverlappingSection(
+                                "section_XC_functionals")
                             backend.addValue("XC_functional_name", f)
-                            backend.closeNonOverlappingSection("section_XC_functionals")
+                            backend.closeNonOverlappingSection(
+                                "section_XC_functionals")
                 elif name == "ISPIN":
                     self.ispin = int(el.text.strip())
 
-    def separatorScan(self, element, backend, depth = 0):
+    def separatorScan(self, element, backend, depth=0):
         for separators in element:
             if separators.tag == "separator":
                 separatorName = separators.attrib.get("name")
@@ -758,29 +866,37 @@ class VasprunContext(object):
                     elif el.tag == "separator":
                         self.separatorScan(el, backend, depth + 1)
                     else:
-                        backend.pwarn("unexpected tag %s %s in parameters separator %s at depth %d" % (el.tag, el.attrib, separatorName, depth))
+                        backend.pwarn("unexpected tag %s %s in parameters separator %s at depth %d" % (
+                            el.tag, el.attrib, separatorName, depth))
             elif separators.tag == "i":
                 self.incarOutTag(separators)
             else:
-                backend.pwarn("unexpected tag %s %s in parameters at depth %d" % (separators.tag, separators.attrib, depth))
+                backend.pwarn("unexpected tag %s %s in parameters at depth %d" % (
+                    separators.tag, separators.attrib, depth))
 
     def onEnd_parameters(self, parser, event, element, pathStr):
         self.separatorScan(element, parser.backend)
         backend = parser.backend
         try:
-           self.prec
-           try:
-              self.enmax
-              self.waveCut = backend.openNonOverlappingSection("section_basis_set_cell_dependent")
-              backend.addValue("basis_set_planewave_cutoff", eV2J(self.enmax*self.prec))
-              backend.closeNonOverlappingSection("section_basis_set_cell_dependent")
-              backend.openNonOverlappingSection("section_method_basis_set")
-              backend.addValue("mapping_section_method_basis_set_cell_associated", self.waveCut)
-              backend.closeNonOverlappingSection("section_method_basis_set")
-           except AttributeError:
-              backend.pwarn("Missing ENMAX for calculating plane wave basis cut off ")
+            self.prec
+            try:
+                self.enmax
+                self.waveCut = backend.openNonOverlappingSection(
+                    "section_basis_set_cell_dependent")
+                backend.addValue("basis_set_planewave_cutoff",
+                                 eV2J(self.enmax*self.prec))
+                backend.closeNonOverlappingSection(
+                    "section_basis_set_cell_dependent")
+                backend.openNonOverlappingSection("section_method_basis_set")
+                backend.addValue(
+                    "mapping_section_method_basis_set_cell_associated", self.waveCut)
+                backend.closeNonOverlappingSection("section_method_basis_set")
+            except AttributeError:
+                backend.pwarn(
+                    "Missing ENMAX for calculating plane wave basis cut off ")
         except AttributeError:
-           backend.pwarn("Missing PREC for calculating plane wave basis cut off ")
+            backend.pwarn(
+                "Missing PREC for calculating plane wave basis cut off ")
 
     def onEnd_dos(self, parser, event, element, pathStr):
         "density of states"
@@ -791,9 +907,11 @@ class VasprunContext(object):
                 if el.attrib.get("name") == "efermi":
                     self.eFermi = eV2J(float(el.text.strip()))
                     backend.addValue("dos_fermi_energy", self.eFermi)
-                    backend.addArrayValues("energy_reference_fermi", np.array([self.eFermi]*self.ispin))
+                    backend.addArrayValues(
+                        "energy_reference_fermi", np.array([self.eFermi]*self.ispin))
                 else:
-                    backend.pwarn("unexpected tag %s %s in dos" % (el.tag, el.attrib))
+                    backend.pwarn("unexpected tag %s %s in dos" %
+                                  (el.tag, el.attrib))
             elif el.tag == "total":
                 for el1 in el:
                     if el1.tag == "array":
@@ -804,12 +922,15 @@ class VasprunContext(object):
                                 dosL = []
                                 for spinComponent in el2:
                                     if spinComponent.tag == "set":
-                                        dosL.append(getVector(spinComponent, field = "r"))
+                                        dosL.append(
+                                            getVector(spinComponent, field="r"))
                                     else:
-                                        backend.pwarn("unexpected tag %s %s in dos total array set" % (spinComponent.tag, spinComponent.attrib))
+                                        backend.pwarn("unexpected tag %s %s in dos total array set" % (
+                                            spinComponent.tag, spinComponent.attrib))
                                 dosA = np.asarray(dosL)
                                 if len(dosA.shape) != 3:
-                                    raise Exception("unexpected shape %s (%s) for total dos (ragged arrays?)" % (dosA.shape), dosA.dtype)
+                                    raise Exception("unexpected shape %s (%s) for total dos (ragged arrays?)" % (
+                                        dosA.shape), dosA.dtype)
                                 dosE = eV2JV(dosA[0, :, 0])
                                 dosI = dosA[:, :, 2]
                                 dosV = dosA[:, :, 1]
@@ -829,17 +950,21 @@ class VasprunContext(object):
                                 else:
                                     eRef = self.eFermi
                                 backend.addArrayValues("dos_energies", dosE)
-                                backend.addArrayValues("dos_energies_normalized", dosE - eRef)
+                                backend.addArrayValues(
+                                    "dos_energies_normalized", dosE - eRef)
                                 backend.addArrayValues("dos_values", dosV)
-                                backend.addArrayValues("dos_integrated_values", dosI)
+                                backend.addArrayValues(
+                                    "dos_integrated_values", dosI)
                             else:
-                                backend.pwarn("unexpected tag %s %s in dos total array" % (el2.tag, el2.attrib))
+                                backend.pwarn("unexpected tag %s %s in dos total array" % (
+                                    el2.tag, el2.attrib))
                     else:
-                        backend.pwarn("unexpected tag %s %s in dos total" % (el2.tag, el2.attrib))
+                        backend.pwarn("unexpected tag %s %s in dos total" % (
+                            el2.tag, el2.attrib))
             elif el.tag == "partial":
                 for el1 in el:
                     if el1.tag == "array":
-                        lm=[]
+                        lm = []
                         for el2 in el1:
                             if el2.tag == "dimension":
                                 pass
@@ -848,20 +973,21 @@ class VasprunContext(object):
                                     pass
                                 else:
                                     strLm = {
-                                        "s": [0,0],
-                                        "p": [1,-1],
-                                        "px":[1,0],
-                                        "py":[1,1],
-                                        "pz":[1,2],
-                                        "d": [2,-1],
-                                        "dx2":[2,0],
-                                        "dxy":[2,1],
-                                        "dxz":[2,2],
-                                        "dy2":[2,3],
-                                        "dyz":[2,4],
-                                        "dz2":[2,5]
+                                        "s": [0, 0],
+                                        "p": [1, -1],
+                                        "px": [1, 0],
+                                        "py": [1, 1],
+                                        "pz": [1, 2],
+                                        "d": [2, -1],
+                                        "dx2": [2, 0],
+                                        "dxy": [2, 1],
+                                        "dxz": [2, 2],
+                                        "dy2": [2, 3],
+                                        "dyz": [2, 4],
+                                        "dz2": [2, 5]
                                     }
-                                    lm.append(strLm.get(el2.text.strip(), [-1,-1]))
+                                    lm.append(
+                                        strLm.get(el2.text.strip(), [-1, -1]))
                             elif el2.tag == "set":
                                 dosL = []
                                 for atom in el2:
@@ -870,27 +996,36 @@ class VasprunContext(object):
                                         dosL.append(atomL)
                                         for spinComponent in atom:
                                             if spinComponent.tag == "set":
-                                                atomL.append(getVector(spinComponent, field = "r"))
+                                                atomL.append(
+                                                    getVector(spinComponent, field="r"))
                                             else:
-                                                backend.pwarn("unexpected tag %s %s in dos partial array set set" % (spinComponent.tag, spinComponent.attrib))
+                                                backend.pwarn("unexpected tag %s %s in dos partial array set set" % (
+                                                    spinComponent.tag, spinComponent.attrib))
                                     else:
-                                        backend.pwarn("unexpected tag %s %s in dos partial array set" % (spinComponent.tag, spinComponent.attrib))
+                                        backend.pwarn("unexpected tag %s %s in dos partial array set" % (
+                                            spinComponent.tag, spinComponent.attrib))
                                 dosLM = np.asarray(dosL)
-                                assert len(dosLM.shape) == 4, "invalid shape dimension in projected dos (ragged arrays?)"
-                                backend.addArrayValues("dos_values_lm", dosLM[:,:,:,1:])
+                                assert len(
+                                    dosLM.shape) == 4, "invalid shape dimension in projected dos (ragged arrays?)"
+                                backend.addArrayValues(
+                                    "dos_values_lm", dosLM[:, :, :, 1:])
                             else:
-                                backend.pwarn("unexpected tag %s %s in dos total array" % (el2.tag, el2.attrib))
+                                backend.pwarn("unexpected tag %s %s in dos total array" % (
+                                    el2.tag, el2.attrib))
                         backend.addArrayValues("dos_lm", np.asarray(lm))
                         backend.addValue("dos_m_kind", "polynomial")
                     else:
-                        backend.pwarn("unexpected tag %s %s in dos total" % (el2.tag, el2.attrib))
+                        backend.pwarn("unexpected tag %s %s in dos total" % (
+                            el2.tag, el2.attrib))
             else:
-                backend.pwarn("unexpected tag %s %s in dos" % (el2.tag, el2.attrib))
+                backend.pwarn("unexpected tag %s %s in dos" %
+                              (el2.tag, el2.attrib))
         backend.closeNonOverlappingSection("section_dos")
 
     def onEnd_projected(self, parser, event, element, pathStr):
         "projected eigenvalues"
         return None
+
 
 class XmlParser(object):
     @staticmethod
@@ -909,38 +1044,41 @@ class XmlParser(object):
         return triggers
 
     @staticmethod
-    def maybeGet(el, path, default = None):
+    def maybeGet(el, path, default=None):
         i = el.findall(path)
         if i:
             return i.pop().text
         else:
             return default
 
-    def __init__(self, parserInfo, superContext, callbacks = None, sectionMap = None):
+    def __init__(self, parserInfo, superContext, callbacks=None, sectionMap=None):
         self.fIn = None
         self.parserInfo = parserInfo
         self.superContext = superContext
-        self.callbacks = callbacks if callbacks is not None else XmlParser.extractCallbacks(superContext)
+        self.callbacks = callbacks if callbacks is not None else XmlParser.extractCallbacks(
+            superContext)
         self.sectionMap = sectionMap if sectionMap is not None else superContext.sectionMap
         self.path = []
         self.tagSections = {}
 
     def parse(self, mainFileUri, fIn, backend):
         if self.path:
-            raise Exception("Parse of %s called with non empty path, parse already in progress?" % mainFileUri)
+            raise Exception(
+                "Parse of %s called with non empty path, parse already in progress?" % mainFileUri)
         self.mainFileUri = mainFileUri
         self.fIn = fIn
         self.backend = backend
         backend.startedParsingSession(
-            mainFileUri = mainFileUri,
-            parserInfo = self.parserInfo)
+            mainFileUri=mainFileUri,
+            parserInfo=self.parserInfo)
         self.superContext.startedParsing(self)
         # there are invalid characters like esc in the files, we do not want to crash on them
         xmlParser = MyXMLParser()
         try:
-            for event, el in xml.etree.ElementTree.iterparse(self.fIn, events=["start","end"], parser = xmlParser):
+            for event, el in xml.etree.ElementTree.iterparse(self.fIn, events=["start", "end"], parser=xmlParser):
                 if event == 'start':
-                    pathStr = "/".join([x.tag for x in self.path]) + "/" + el.tag
+                    pathStr = "/".join([x.tag for x in self.path]
+                                       ) + "/" + el.tag
                     sectionsToOpen = self.sectionMap.get(el.tag, None)
                     if sectionsToOpen:
                         gIndexes = {}
@@ -954,7 +1092,8 @@ class XmlParser(object):
                 elif event == 'end':
                     lastEl = self.path.pop()
                     if lastEl != el:
-                        raise Exception("mismatched path at end, got %s expected %s" % (lastEl, el))
+                        raise Exception(
+                            "mismatched path at end, got %s expected %s" % (lastEl, el))
                     tag = el.tag
                     pathStr = "/".join([x.tag for x in self.path]) + "/" + tag
                     callback = self.callbacks.get("onEnd_" + tag, None)
@@ -979,28 +1118,30 @@ class XmlParser(object):
                 else:
                     raise Exception("Unexpected event %s" % event)
         except:
-            logging.exception("failure when parsing %s", self.mainFileUri)
             backend.finishedParsingSession(
-                parserStatus = "ParseFailure",
-                parserErrors = ["exception: %s" % sys.exc_info()[1]]
+                parserStatus="ParseFailure",
+                parserErrors=["exception: %s" % sys.exc_info()[1]]
             )
         else:
             backend.finishedParsingSession(
-                parserStatus = "ParseSuccess",
-                parserErrors = None
+                parserStatus="ParseSuccess",
+                parserErrors=None
             )
+
 
 g = XmlParser.maybeGet
 
 parserInfo = {
-  "name": "parser_vasprun",
-  "version": "1.0"
+    "name": "parser_vasprun",
+    "version": "1.0"
 }
 
 if __name__ == "__main__":
-    metaInfoPath = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),"../../../../../nomad-meta-info/meta_info/nomad_meta_info/vasp.nomadmetainfo.json"))
-    metaInfoEnv, warnings = loadJsonFile(filePath = metaInfoPath, dependencyLoader = None, extraArgsHandling = InfoKindEl.ADD_EXTRA_ARGS, uri = None)
-    superContext =  VasprunContext()
+    metaInfoPath = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(
+        __file__)), "../../../../../nomad-meta-info/meta_info/nomad_meta_info/vasp.nomadmetainfo.json"))
+    metaInfoEnv, warnings = loadJsonFile(
+        filePath=metaInfoPath, dependencyLoader=None, extraArgsHandling=InfoKindEl.ADD_EXTRA_ARGS, uri=None)
+    superContext = VasprunContext()
     parser = XmlParser(parserInfo, superContext)
     backend = JsonParseEventsWriterBackend(metaInfoEnv, sys.stdout)
     parser.parse(sys.argv[1], open(sys.argv[2]), backend)

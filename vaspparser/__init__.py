@@ -14,25 +14,50 @@
 
 import os
 import logging
+
 from nomadcore.baseclasses import ParserInterface
+
 from vaspparser.parser_vasprun import parserInfo
-from vaspparser.vaspmainparser import VASPMainParser
-logger = logging.getLogger("nomad")
+from vaspparser.parser_vasprun import VasprunContext, XmlParser, parserInfo
+
+logger = logging.getLogger(__name__)
 
 
-class VASPParser(ParserInterface):
-    """This class handles the initial setup before any parsing can happen. It
+class VASPRunParser:
+    """
+    The main parser class that is called for all run types. Parses the VASP
+    .out output files.
+    """
+    def __init__(self, parser_context):
+        self.parser_context = parser_context
+
+    def parse(self, filepath):
+        superContext = VasprunContext(logger=logger)
+        parser = XmlParser(parserInfo, superContext)
+        backend = self.parser_context.super_backend
+        parser.parse(os.path.abspath(filepath), open(filepath), backend)
+
+
+class VASPRunParserInterface(ParserInterface):
+    """
+    This class handles the initial setup before any parsing can happen. It
     determines which version of BigDFT was used to generate the output and then
     sets up a correct main parser.
 
     After the implementation has been setup, you can parse the files with
     parse().
     """
-    def __init__(self, metainfo_to_keep=None, backend=None, default_units=None, metainfo_units=None, debug=True, log_level=logging.ERROR, store=True):
-        super(VASPParser, self).__init__(metainfo_to_keep, backend, default_units, metainfo_units, debug, log_level, store)
+    def __init__(
+            self,
+            metainfo_to_keep=None, backend=None, default_units=None,
+            metainfo_units=None, debug=True, log_level=logging.ERROR, store=True):
+
+        super(VASPRunParserInterface, self).__init__(
+            metainfo_to_keep, backend, default_units, metainfo_units, debug, log_level, store)
 
     def setup_version(self):
-        """Setups the version by looking at the output file and the version
+        """
+        Setups the version by looking at the output file and the version
         specified in it.
         """
         # Setup the root folder to the fileservice that is used to access files
@@ -40,7 +65,7 @@ class VASPParser(ParserInterface):
         dirpath = os.path.abspath(dirpath)
         self.parser_context.file_service.setup_root_folder(dirpath)
         self.parser_context.file_service.set_file_id(filename, "output")
-        self.main_parser = VASPMainParser(self.parser_context)
+        self.main_parser = VASPRunParser(self.parser_context)
 
     def get_metainfo_filename(self):
         return "vasp.nomadmetainfo.json"
