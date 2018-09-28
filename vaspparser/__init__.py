@@ -16,11 +16,10 @@ import os
 import logging
 
 from nomadcore.baseclasses import ParserInterface
+import nomadcore.baseclasses
 
 from vaspparser.parser_vasprun import parserInfo
 from vaspparser.parser_vasprun import VasprunContext, XmlParser, parserInfo
-
-logger = logging.getLogger(__name__)
 
 
 class VASPRunParser:
@@ -32,7 +31,8 @@ class VASPRunParser:
         self.parser_context = parser_context
 
     def parse(self, filepath):
-        superContext = VasprunContext(logger=logger)
+        # the nomadcore.baseclasses.logger is set for each parsing run
+        superContext = VasprunContext(logger=nomadcore.baseclasses.logger)
         parser = XmlParser(parserInfo, superContext)
         backend = self.parser_context.super_backend
         parser.parse(os.path.abspath(filepath), open(filepath), backend)
