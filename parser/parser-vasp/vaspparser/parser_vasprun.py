@@ -258,6 +258,7 @@ class VasprunContext(object):
         self.eFermi = None
         self.cell = None
         self.angstrom_cell = None
+        self.waveCut = None
 
     sectionMap = {
         "modeling": ["section_run", "section_method"],
@@ -304,7 +305,7 @@ class VasprunContext(object):
             if (el.tag != "i"):
                 backend.pwarn("unexpected tag %s %s %r in incar" % (el.tag, el.attrib, el.text))
             else:
-                name = el.attrib.get("name", None)
+                name = el.attrib.get("name", None).lower()
                 meta = metaEnv['x_vasp_incar_' + name]
                 valType = el.attrib.get("type")
                 if not meta:
@@ -330,7 +331,7 @@ class VasprunContext(object):
                             backend.addValue(meta["name"], [converter(x) for x in vals])
                         else:
                             backend.addValue(meta["name"], converter(el.text))
-                    if name == 'GGA':
+                    if name == 'gga':
                         fMap = {
                             '91': ['GGA_X_PW91', 'GGA_C_PW91'],
                             'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
@@ -342,17 +343,17 @@ class VasprunContext(object):
                             backend.pwarn("Unknown XC functional %s" % el.text.strip())
                         else:
                             for f in functs:
-                                backend.openNonOverlappingSection("section_XC_functionals")
-                                backend.addValue("XC_functional_name", f)
-                                backend.closeNonOverlappingSection("section_XC_functionals")
-                    elif name == "ISPIN":
+                                backend.openNonOverlappingSection("section_xc_functionals")
+                                backend.addValue("xc_functional_name", f)
+                                backend.closeNonOverlappingSection("section_xc_functionals")
+                    elif name == "ispin":
                         self.ispin = int(el.text.strip())
-                    elif name == "LDAU":
+                    elif name == "ldau":
                         if re.match(".?[Tt](?:[rR][uU][eE])?.?|[yY](?:[eE][sS])?|1", el.text.strip()):
                             dft_plus_u = True
-                    elif name == "IBRION":
+                    elif name == "ibrion":
                         ibrion = int(el.text.strip())
-                    elif name == "NSW":
+                    elif name == "nsw":
                         nsw = int(el.text.strip())
         if ibrion is None:
             ibrion = -1 if nsw == 0 or nsw == 1 else 0
@@ -437,8 +438,8 @@ class VasprunContext(object):
         if pathStr != "modeling/calculation/eigenvalues":
             return True
         backend = parser.backend
-        eigenvalues = None
-        occupation = None
+        eigenvalues = []
+        occupation = []
         for el in element:
             if el.tag == "array":
                 for arrEl in el:
@@ -456,27 +457,26 @@ class VasprunContext(object):
                                     if kEl.tag == "set":
                                         ik += 1
                                         bands = np.asarray(getVector(kEl, field = "r"))
-                                        if eigenvalues is None:
-                                            eigenvalues = np.zeros((self.ispin, self.kpoints.shape[0],  bands.shape[0]), dtype = float)
-                                            occupation = np.zeros((self.ispin, self.kpoints.shape[0],  bands.shape[0]), dtype = float)
-                                        eigenvalues[isp, ik] = bands[:,0]
-                                        occupation[isp, ik] = bands[:,1]
+                                        if len(eigenvalues) <=  isp:
+                                            eigenvalues.append(np.zeros((self.kpoints.shape[0],  bands.shape[0]), dtype = float))
+                                            occupation.append(np.zeros((self.kpoints.shape[0],  bands.shape[0]), dtype = float))
+                                        eigenvalues[isp][ik] = bands[:,0]
+                                        occupation[isp][ik] = bands[:,1]
                                     else:
                                         backend.pwarn("unexpected tag %s in k array of the eigenvalues" % kEl.tag)
                             else:
                                 backend.pwarn("unexpected tag %s in spin array of the eigenvalues" % spinEl.tag)
                     else:
                         backend.pwarn("unexpected tag %s in array of the eigenvalues" % arrEl.tag)
-                if eigenvalues is not None:
-
-                    ev = eV2JV(eigenvalues)
+                if eigenvalues:
+                    ev = eV2JV(np.array(eigenvalues))
                     vbTopE = []
                     ebMinE = []
-                    for ispin in range(occupation.shape[0]):
+                    for ispin in range(len(occupation)):
                         vbTopE.append(float('-inf'))
                         ebMinE.append(float('inf'))
-                        for ik in range(occupation.shape[1]):
-                            ebIndex = bisect.bisect_right(-occupation[ispin, ik, :], -0.5) - 1
+                        for ik in range(occupation[ispin].shape[0]):
+                            ebIndex = bisect.bisect_right(-occupation[ispin][ik, :], -0.5) - 1
                             vbTopIndex = ebIndex -1
                             if vbTopIndex >= 0:
                                 vbTopK = ev[ispin, ik, vbTopIndex]
@@ -495,8 +495,9 @@ class VasprunContext(object):
                         backend.openNonOverlappingSection("section_k_band")
                         nsegments = self.kpoints.shape[0] // divisions
                         kpt = np.reshape(self.kpoints, (nsegments, divisions, 3))
-                        energies = np.reshape(ev, (self.ispin, nsegments, divisions ,  bands.shape[0]))
-                        occ = np.reshape(occupation, (self.ispin, nsegments, divisions, bands.shape[0]))
+                        ispin = len(eigenvalues)
+                        energies = np.reshape(ev, (ispin, nsegments, divisions ,  bands.shape[0]))
+                        occ = np.reshape(np.array(occupation), (ispin, nsegments, divisions, bands.shape[0]))
                         for isegment in range(nsegments):
                             backend.openNonOverlappingSection("section_k_band_segment")
                             backend.addArrayValues("band_energies", energies[:, isegment, :, :])
@@ -527,7 +528,7 @@ class VasprunContext(object):
                     else:
                         backend.openNonOverlappingSection("section_eigenvalues")
                         backend.addArrayValues("eigenvalues_values", ev)
-                        backend.addArrayValues("eigenvalues_occupation", occupation)
+                        backend.addArrayValues("eigenvalues_occupation", np.array(occupation))
                         backend.closeNonOverlappingSection("section_eigenvalues")
             else:
                 backend.pwarn("unexpected tag %s in the eigenvalues" % el.tag)
@@ -538,7 +539,7 @@ class VasprunContext(object):
     def onStart_calculation(self, parser, event, element, pathStr):
         gIndexes = parser.tagSections[pathStr]
         self.singleConfCalcs.append(gIndexes["section_single_configuration_calculation"])
-        if self.waveCut:
+        if self.waveCut is not None:
             backend.openNonOverlappingSection("section_basis_set")
             backend.addValue("mapping_section_basis_set_cell_dependent", self.waveCut)
             backend.closeNonOverlappingSection("section_basis_set")
@@ -555,8 +556,8 @@ class VasprunContext(object):
         backend.addValue("sampling_method", sampling_method)
         backend.closeSection("section_sampling_method", samplingGIndex)
         frameSequenceGIndex = backend.openSection("section_frame_sequence")
-        backend.addValue("frame_sequence_to_sampling_ref", samplingGIndex)
-        backend.addArrayValues("frame_sequence_local_frames_ref", np.asarray(self.singleConfCalcs))
+        backend.addValue("frame_sequence_to_sampling_method_ref", samplingGIndex)
+        backend.addArrayValues("frame_sequence_to_frames_ref", np.asarray(self.singleConfCalcs))
         backend.closeSection("section_frame_sequence", frameSequenceGIndex)
 
     def onEnd_calculation(self, parser, event, element, pathStr):
@@ -566,7 +567,7 @@ class VasprunContext(object):
         backend = parser.backend
         backend.addValue("single_configuration_calculation_to_system_ref", self.lastSystemDescription)
         gIndexes = parser.tagSections["/modeling"]
-        backend.addValue("single_configuration_to_calculation_method_ref", gIndexes["section_method"])
+        backend.addValue("single_configuration_calculation_to_method_ref", gIndexes["section_method"])
         for el in element:
             if el.tag == "energy":
                 for enEl in el:
@@ -580,14 +581,16 @@ class VasprunContext(object):
                             backend.addValue("energy_total", value)
                         elif name == "e_0_energy":
                             value = eConv(float(enEl.text.strip()))
-                            backend.addValue("energy_total_T0", value)
+                            backend.addValue("energy_total_t0", value)
                         else:
                             backend.pwarn("Unexpected i tag with name %s in energy section" % name)
                     elif enEl.tag == "varray":
                         name = enEl.attrib.get("name", None)
                         if name == "forces":
                             f = getVector(enEl, lambda x: fConv(float(x)))
+                            fId = backend.openSection('section_atom_forces')
                             backend.addValue("atom_forces", f)
+                            backend.closeSection('section_atom_forces', fId)
                         elif name == 'stress':
                             f = getVector(enEl, lambda x: pConv(float(x)))
                             backend.addValue("stress_tensor", f)
@@ -743,9 +746,9 @@ class VasprunContext(object):
                         backend.pwarn("Unknown XC functional %s" % el.text.strip())
                     else:
                         for f in functs:
-                            backend.openNonOverlappingSection("section_XC_functionals")
-                            backend.addValue("XC_functional_name", f)
-                            backend.closeNonOverlappingSection("section_XC_functionals")
+                            backend.openNonOverlappingSection("section_xc_functionals")
+                            backend.addValue("xc_functional_name", f)
+                            backend.closeNonOverlappingSection("section_xc_functionals")
                 elif name == "ISPIN":
                     self.ispin = int(el.text.strip())
 
