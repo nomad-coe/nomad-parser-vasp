@@ -20,6 +20,7 @@ import nomadcore.baseclasses
 
 from vaspparser.parser_vasprun import parserInfo
 from vaspparser.parser_vasprun import VasprunContext, XmlParser, parserInfo
+from vaspparser.parser_outcar import VaspOutcarParser
 
 
 class VASPRunParser:
