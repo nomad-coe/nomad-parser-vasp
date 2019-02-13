@@ -14,6 +14,8 @@
 
 import os
 import logging
+import gzip
+import bz2
 
 from nomadcore.baseclasses import ParserInterface
 import nomadcore.baseclasses
@@ -26,7 +28,7 @@ from vaspparser.parser_outcar import VaspOutcarParser
 class VASPRunParser:
     """
     The main parser class that is called for all run types. Parses the VASP
-    .out output files.
+    .xml output files.
     """
     def __init__(self, parser_context):
         self.parser_context = parser_context
@@ -36,7 +38,14 @@ class VASPRunParser:
         superContext = VasprunContext(logger=nomadcore.baseclasses.logger)
         parser = XmlParser(parserInfo, superContext)
         backend = self.parser_context.super_backend
-        parser.parse(os.path.abspath(filepath), open(filepath), backend)
+
+        open_file = open
+        if filepath.endswith('.gz'):
+            open_file = gzip.open
+        elif filepath.endswith('.bz2'):
+            open_file = bz2.open
+
+        parser.parse(os.path.abspath(filepath), open_file(filepath, 'rt'), backend)
 
 
 class VASPRunParserInterface(ParserInterface):
