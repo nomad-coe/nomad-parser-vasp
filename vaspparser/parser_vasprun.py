@@ -275,6 +275,8 @@ class VasprunContext(object):
         self.cell = None
         self.angstrom_cell = None
 
+        self.unknown_incar_params = []
+
         if self.logger is None:
             logger = logging.getLogger(__name__)
 
@@ -795,8 +797,7 @@ class VasprunContext(object):
             meta = metaEnv['x_vasp_incarOut_' + name]
             valType = el.attrib.get("type")
             if not meta:
-                backend.pwarn("Unknown INCAR out parameter (not registered in the meta data): %s %s %r" % (
-                    el.tag, el.attrib, el.text))
+                self.unknown_incar_params.append((el.tag, el.attrib, el.text))
             else:
                 if valType:
                     expectedMetaType = {
@@ -866,13 +867,15 @@ class VasprunContext(object):
                     elif el.tag == "separator":
                         self.separatorScan(el, backend, depth + 1)
                     else:
-                        backend.pwarn("unexpected tag %s %s in parameters separator %s at depth %d" % (
-                            el.tag, el.attrib, separatorName, depth))
+                        # backend.pwarn("unexpected tag %s %s in parameters separator %s at depth %d" % (
+                        #     el.tag, el.attrib, separatorName, depth))
+                        pass
             elif separators.tag == "i":
                 self.incarOutTag(separators)
             else:
-                backend.pwarn("unexpected tag %s %s in parameters at depth %d" % (
-                    separators.tag, separators.attrib, depth))
+                # backend.pwarn("unexpected tag %s %s in parameters at depth %d" % (
+                #     separators.tag, separators.attrib, depth))
+                pass
 
     def onEnd_parameters(self, parser, event, element, pathStr):
         self.separatorScan(element, parser.backend)
@@ -1123,6 +1126,10 @@ class XmlParser(object):
                 parserErrors=["exception: %s" % sys.exc_info()[1]]
             )
         else:
+            if len(self.superContext.unknown_incar_params) > 0:
+                example = self.superContext.unknown_incar_params[0]
+                backend.pwarn("Unknown INCAR out parameters (not registered in the meta data), e.g. %s %s %r" % example)
+
             backend.finishedParsingSession(
                 parserStatus="ParseSuccess",
                 parserErrors=None
