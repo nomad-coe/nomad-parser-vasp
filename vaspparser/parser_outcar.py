@@ -82,7 +82,7 @@ class MainParser(MainHierarchicalParser):
         backend.addArrayValues('configuration_periodic_dimensions', self.ase.get_pbc())
 
     def onClose_section_run(self, backend, *args, **kwargs):
-        backend.addValue('program_name', 'vasp')
+        backend.addValue('program_name', 'VASP')
         backend.addValue('program_basis_set_type', 'plane waves')
 
 
