@@ -77,8 +77,8 @@ class MainParser(MainHierarchicalParser):
 
     def onClose_section_system(self, backend, *args, **kwargs):
         backend.addArrayValues('atom_labels', np.array(self.ase.get_chemical_symbols()))
-        backend.addArrayValues('atom_positions', self.ase.get_positions())
-        backend.addArrayValues('lattice_vectors', self.ase.get_cell())
+        backend.addArrayValues('atom_positions', self.ase.get_positions() * 1e-10)
+        backend.addArrayValues('lattice_vectors', self.ase.get_cell() * 1e-10)
         backend.addArrayValues('configuration_periodic_dimensions', self.ase.get_pbc())
 
     def onClose_section_run(self, backend, *args, **kwargs):
