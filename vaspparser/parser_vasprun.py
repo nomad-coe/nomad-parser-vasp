@@ -46,19 +46,24 @@ def crystal_structure_from_cell(cell, eps=1e-4):
     angles = cellpar[3:] / 180 * pi
     a, b, c = abc
     alpha, beta, gamma = angles
+    # According to:
+    # https://www.physics-in-a-nutshell.com/article/6/symmetry-crystal-systems-and-bravais-lattices#the-seven-crystal-systems
+    # If a=b=c and alpha=beta=gamma=90degrees we have cubic.
     if abc.ptp() < eps and abs(angles - pi / 2).max() < eps:
         return 'cubic'
     elif abc.ptp() < eps and abs(angles - pi / 3).max() < eps:
         return 'fcc'
     elif abc.ptp() < eps and abs(angles - np.arccos(-1 / 3)).max() < eps:
         return 'bcc'
+    # If a=b!=c, alpha=beta=gamma=90deg, tetragonal.
     elif abs(a - b) < eps and abs(angles - pi / 2).max() < eps:
         return 'tetragonal'
     elif abs(angles - pi / 2).max() < eps:
         return 'orthorhombic'
-    elif (abs(a - b) < eps and
-          abs(gamma - pi / 3 * 2) < eps and
-          abs(angles[:2] - pi / 2).max() < eps):
+    # if a = b != c , alpha = beta = 90deg, gamma = 120deg, hexagonal
+    elif (abs(a - b) < eps
+          and abs(gamma - pi / 3 * 2) < eps
+          and abs(angles[:2] - pi / 2).max() < eps):
         return 'hexagonal'
     elif (c >= a and c >= b and alpha < pi / 2 and
           abs(angles[1:] - pi / 2).max() < eps):
@@ -575,7 +580,7 @@ class VasprunContext(object):
                             specialPoints = get_special_points(
                                 convert_unit_function("m", "angstrom")(self.cell))
                         except Exception as e:
-                            self.logger.error("failed to get special points", exc_info=e)
+                            self.logger.warn("failed to get special points", exc_info=e)
                         for isegment in range(nsegments):
                             backend.openNonOverlappingSection(
                                 "section_k_band_segment_normalized")
