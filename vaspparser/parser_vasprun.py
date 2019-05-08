@@ -580,7 +580,7 @@ class VasprunContext(object):
                             specialPoints = get_special_points(
                                 convert_unit_function("m", "angstrom")(self.cell))
                         except Exception as e:
-                            self.logger.warn("failed to get special points", exc_info=e)
+                            self.logger.warn("failed to get special points/xtal structure", exc_info=e)
                         for isegment in range(nsegments):
                             backend.openNonOverlappingSection(
                                 "section_k_band_segment_normalized")
