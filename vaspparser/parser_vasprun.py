@@ -167,8 +167,8 @@ def get_special_points(cell, eps=1e-4):
         return special_points[lattice]
 
     # Here, we need the cell:
-    eta = (1 - b * cos(alpha) / c) / (2 * sin(alpha)**2)
-    nu = 1 / 2 - eta * c * cos(alpha) / b
+    eta = (1 - b * np.cos(alpha) / c) / (2 * np.sin(alpha)**2)
+    nu = 1 / 2 - eta * c * np.cos(alpha) / b
     return {'Γ': [0, 0, 0],
             'A': [1 / 2, 1 / 2, 0],
             'C': [0, 1 / 2, 1 / 2],
