@@ -615,6 +615,7 @@ class VasprunContext(object):
         pass
 
     def onStart_calculation(self, parser, event, element, pathStr):
+        backend = parser.backend
         gIndexes = parser.tagSections[pathStr]
         self.singleConfCalcs.append(
             gIndexes["section_single_configuration_calculation"])
@@ -822,7 +823,7 @@ class VasprunContext(object):
                     converter = metaTypeTransformers.get(dtypeStr)
                     if not converter:
                         backend.pwarn(
-                            "could not find converter for dtypeStr %s when handling meta info %s" % (dtypeStr, ))
+                            "could not find converter for dtypeStr %s when handling meta info %s" % (dtypeStr, meta))
                     elif shape:
                         vals = re.split("\s+", el.text.strip())
                         backend.addValue(
