@@ -16,6 +16,7 @@ import os
 import logging
 import gzip
 import bz2
+import lzma
 
 from nomadcore.baseclasses import ParserInterface
 import nomadcore.baseclasses
@@ -44,6 +45,8 @@ class VASPRunParser:
             open_file = gzip.open
         elif filepath.endswith('.bz2'):
             open_file = bz2.open
+        elif filepath.endswith('.xz'):
+            open_file = lzma.open
 
         parser.parse(os.path.abspath(filepath), open_file(filepath, 'rt'), backend)
 
