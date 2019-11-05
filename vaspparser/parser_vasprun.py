@@ -38,6 +38,7 @@ eV2J = convert_unit_function("eV", "J")
 eV2JV = np.vectorize(eV2J)
 
 
+
 def crystal_structure_from_cell(cell, eps=1e-4):
     """Return the crystal structure as a string calculated from the cell.
     """
@@ -71,6 +72,11 @@ def crystal_structure_from_cell(cell, eps=1e-4):
     else:
         raise ValueError('Cannot find crystal structure')
 
+vasp_to_metainfo_type_mapping = {
+    'string': ['C'],
+    'int': ['i'],
+    'logical': ['b', 'C'],
+    'float': ['f']}
 
 special_points = {
     'cubic': {'Γ': [0, 0, 0],
@@ -215,10 +221,9 @@ def toBool(value):
         backend.pwarn("Unexpected value for boolean field: %s" % (value))
         return None
 
-
 metaTypeTransformers = {
     'C': lambda x: x.strip(),
-    'i': lambda x: int(x.strip()),
+    'i': lambda x: int(float(x.strip())),
     'f': lambda x: float(x.strip()),
     'b': toBool,
 }
@@ -263,8 +268,12 @@ def getVector(el, transform=float, field="v"):
 
 
 class VasprunContext(object):
-    def __init__(self, logger=None):
+
+    def __init__(self, logger=None):   
+        if logger is None:
+            logger = logging.getLogger(__name__)     
         self.logger = logger
+
         self.parser = None
         self.bands = None
         self.kpoints = None
@@ -279,12 +288,8 @@ class VasprunContext(object):
         self.eFermi = None
         self.cell = None
         self.angstrom_cell = None
-
-        self.unknown_incar_params = []
-
-        if self.logger is None:
-            logger = logging.getLogger(__name__)
-
+        self.unknown_incars = {} 
+        
     sectionMap = {
         "modeling": ["section_run", "section_method"],
         "structure": ["section_system"],
@@ -329,11 +334,17 @@ class VasprunContext(object):
         dft_plus_u = False
         ibrion = None
         nsw = 0
-        for el in element:
-            if (el.tag != "i"):
-                backend.pwarn("unexpected tag %s %s %r in incar" %
-                              (el.tag, el.attrib, el.text))
-            else:
+        for el in element:            
+            if el.tag == "v":            
+                name = el.attrib.get("name", None)
+                meta = metaEnv['x_vasp_incar_' + name]
+                if not meta:
+                    backend.pwarn("Unknown INCAR parameter (not registered in the meta data): %s %s %r" % (
+                        el.tag, el.attrib, el.text))
+                #- - 
+                vector_val = np.asarray(getVector(el))
+                backend.addArrayValues(meta.get('name'), vector_val)
+            elif el.tag == "i":
                 name = el.attrib.get("name", None)
                 meta = metaEnv['x_vasp_incar_' + name]
                 valType = el.attrib.get("type")
@@ -392,6 +403,9 @@ class VasprunContext(object):
                         ibrion = int(el.text.strip())
                     elif name == "NSW":
                         nsw = int(el.text.strip())
+            else:
+                backend.pwarn("unexpected tag %s %s %r in incar" %
+                              (el.tag, el.attrib, el.text))
         if ibrion is None:
             ibrion = -1 if nsw == 0 or nsw == 1 else 0
         if nsw == 0:
@@ -406,22 +420,27 @@ class VasprunContext(object):
         backend = parser.backend
         self.bands = None
         self.kpoints = None
-        self.weights = None
-        for el in element:
+        self.weights = None        
+        for el in element:                             
             if el.tag == "generation":
-                param = el.attrib.get("param", None)
-                if param:
+                param = el.attrib.get("param", None) # eg. listgenerated, Monkhorst-Pack, Gamma
+                if param:                      
                     backend.addValue(
                         "x_vasp_k_points_generation_method", param)
                 if param == "listgenerated":
+                    # This implies a path on k-space, potentially a bandstructure calculation
+                    # Save k-path info into a dictionary                    
                     self.bands = {
                         "divisions": g(el, "i/[@name='divisions']", None),
                         "points": getVector(el)
                     }
-                elif param == "Monkhorst-Pack":
+
+                elif param in ["Monkhorst-Pack", "Gamma"]:
+                    # This implies a (2D|3D) mesh on k-space, i.e., not a badstructure calculation
+                    # Hence, do nothing: k-points will be stored in the `varray` if-block
                     pass
                 else:
-                    backend.pwarn("unknown k point generation method")
+                    backend.pwarn("Unknown k point generation method '%s'" %(param)) 
             elif el.tag == "varray":
                 name = el.attrib.get("name", None)
                 if name == "kpointlist":
@@ -434,7 +453,7 @@ class VasprunContext(object):
                 else:
                     backend.pwarn("Unknown array %s in kpoints" % name)
             else:
-                backend.pwarn("Unknown tag %s in kpoints" % el.tag)
+                backend.pwarn("Unknown tag %s in kpoints" % el.tag)        
 
     def onEnd_structure(self, parser, event, element, pathStr):
         backend = parser.backend
@@ -627,6 +646,7 @@ class VasprunContext(object):
 
     def onEnd_modeling(self, parser, event, element, pathStr):
         backend = parser.backend
+        backend.addValue("x_vasp_unknown_incars", self.unknown_incars)
         if self.ibrion is None or self.ibrion == -1:
             return
         samplingGIndex = backend.openSection("section_sampling_method")
@@ -641,6 +661,7 @@ class VasprunContext(object):
         backend.addArrayValues(
             "frame_sequence_local_frames_ref", np.asarray(self.singleConfCalcs))
         backend.closeSection("section_frame_sequence", frameSequenceGIndex)
+        
 
     def onEnd_calculation(self, parser, event, element, pathStr):
         eConv = eV2J
@@ -792,47 +813,76 @@ class VasprunContext(object):
                 backend.pwarn("unexpected tag %s in atominfo" % el.tag)
         self.labels = np.asarray(labels2) if labels2 else np.asarray(labels)
 
-    def incarOutTag(self, el):
+    def incarOutTag(self, el):    
         backend = self.parser.backend
         metaEnv = self.parser.backend.metaInfoEnv()
         if (el.tag != "i"):
             backend.pwarn("unexpected tag %s %s %r in incar" %
                           (el.tag, el.attrib, el.text))
         else:
-            name = el.attrib.get("name", None)
+            name    = el.attrib.get("name", None)
+            valType = el.attrib.get("type")            
             meta = metaEnv['x_vasp_incarOut_' + name]
-            valType = el.attrib.get("type")
-            if not meta:
-                self.unknown_incar_params.append((el.tag, el.attrib, el.text))
+            
+
+            if not meta:                
+                # Unknown_Incars_Begin: storage into a dictionary 
+                if not valType:
+                    # On vasp's xml files, valType *could* be absent if incar value is float 
+                    valType = 'float'
+
+                # map vasp's datatype to nomad's datatype [b, f, i, C, D, R]
+                nomad_dtypeStr = vasp_to_metainfo_type_mapping[valType][0]
+
+                converter = metaTypeTransformers.get(nomad_dtypeStr)
+                text_value = el.text.strip() # text representation of incar value                       
+                try: 
+                    pyvalue = converter(text_value) # python data type
+                except Exception: 
+                    pyvalue = text_value
+                
+                # save (name, pyvalue) into a dict
+                self.unknown_incars[name] = pyvalue
+                # Unknown_Incars_end
             else:
-                if valType:
-                    expectedMetaType = {
-                        'string': ['C'],
-                        'int': ['i'],
-                        'logical': ['b', 'C']
-                    }.get(valType)
-                    if not expectedMetaType:
-                        backend.pwarn("Unknown value type %s encountered in INCAR out: %s %s %r" % (
-                            valType, el.tag, el.attrib, el.text))
-                    elif not meta.get('dtypeStr') in expectedMetaType:
-                        backend.pwarn("type mismatch between meta data %s and INCAR type %s for %s %s %r" % (
-                            meta.get('dtypeStr'), valType, el.tag, el.attrib, el.text))
-                try:
-                    shape = meta.get("shape", None)
-                    dtypeStr = meta.get("dtypeStr", None)
-                    converter = metaTypeTransformers.get(dtypeStr)
+                if not valType:
+                    valType = 'float'
+
+                vasp_metainfo_type = vasp_to_metainfo_type_mapping.get(valType)[0]
+                metainfo_type = meta.get('dtypeStr')                                
+                if not vasp_metainfo_type:
+                    backend.pwarn("Unknown value type %s encountered in INCAR out: %s %s %r" % (
+                        valType, el.tag, el.attrib, el.text))
+
+                elif metainfo_type != vasp_metainfo_type:                      
+                    if  (metainfo_type == 'C' and vasp_metainfo_type == 'b'):                  
+                        pass
+                    elif  (metainfo_type == 'i' and vasp_metainfo_type == 'f'):                  
+                        pass
+                    else:
+                        backend.pwarn("Data type mismatch: %s. Vasp_type: %s, metainfo_type: %s " %
+                        (name, vasp_metainfo_type, metainfo_type))
+                try:                    
+                    shape = meta.get("shape", None)                    
+                    converter = metaTypeTransformers.get(metainfo_type)                                    
                     if not converter:
                         backend.pwarn(
-                            "could not find converter for dtypeStr %s when handling meta info %s" % (dtypeStr, meta))
+                            "could not find converter for dtypeStr %s when handling meta info %s" % 
+                            (metainfo_type, meta ))
                     elif shape:
                         vals = re.split("\s+", el.text.strip())
                         backend.addValue(
                             meta["name"], [converter(x) for x in vals])
                     else:
+                        # If-block to handle incars without value
+                        if el.text == None:
+                            el.text = ''                             
                         backend.addValue(meta["name"], converter(el.text))
-                except:
+
+                except: 
                     backend.pwarn("Exception trying to handle incarOut %s: %s" % (
                         name, traceback.format_exc()))
+
                 if name == 'ENMAX' or name == 'PREC':
                     if name == 'ENMAX':
                         self.enmax = converter(el.text)
@@ -862,6 +912,7 @@ class VasprunContext(object):
                                 "section_XC_functionals")
                 elif name == "ISPIN":
                     self.ispin = int(el.text.strip())
+        
 
     def separatorScan(self, element, backend, depth=0):
         for separators in element:
@@ -901,6 +952,8 @@ class VasprunContext(object):
                     "mapping_section_method_basis_set_cell_associated", self.waveCut)
                 backend.closeNonOverlappingSection("section_method_basis_set")
             except AttributeError:
+                import traceback 
+                traceback.print_exc()
                 backend.pwarn(
                     "Missing ENMAX for calculating plane wave basis cut off ")
         except AttributeError:
@@ -1132,10 +1185,6 @@ class XmlParser(object):
                 parserErrors=["exception: %s" % sys.exc_info()[1]]
             )
         else:
-            if len(self.superContext.unknown_incar_params) > 0:
-                example = self.superContext.unknown_incar_params[0]
-                backend.pwarn("Unknown INCAR out parameters (not registered in the meta data), e.g. %s %s %r" % example)
-
             backend.finishedParsingSession(
                 parserStatus="ParseSuccess",
                 parserErrors=None
