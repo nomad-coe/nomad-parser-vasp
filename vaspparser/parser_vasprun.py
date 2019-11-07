@@ -16,6 +16,7 @@ from __future__ import division
 from builtins import range
 from builtins import object
 import xml.etree.ElementTree
+from xml.etree.ElementTree import ParseError
 import sys
 import bisect
 from datetime import datetime
@@ -269,9 +270,9 @@ def getVector(el, transform=float, field="v"):
 
 class VasprunContext(object):
 
-    def __init__(self, logger=None):   
+    def __init__(self, logger=None):
         if logger is None:
-            logger = logging.getLogger(__name__)     
+            logger = logging.getLogger(__name__)
         self.logger = logger
 
         self.parser = None
@@ -288,8 +289,8 @@ class VasprunContext(object):
         self.eFermi = None
         self.cell = None
         self.angstrom_cell = None
-        self.unknown_incars = {} 
-        
+        self.unknown_incars = {}
+
     sectionMap = {
         "modeling": ["section_run", "section_method"],
         "structure": ["section_system"],
@@ -334,14 +335,14 @@ class VasprunContext(object):
         dft_plus_u = False
         ibrion = None
         nsw = 0
-        for el in element:            
-            if el.tag == "v":            
+        for el in element:
+            if el.tag == "v":
                 name = el.attrib.get("name", None)
                 meta = metaEnv['x_vasp_incar_' + name]
                 if not meta:
                     backend.pwarn("Unknown INCAR parameter (not registered in the meta data): %s %s %r" % (
                         el.tag, el.attrib, el.text))
-                #- - 
+                #- -
                 vector_val = np.asarray(getVector(el))
                 backend.addArrayValues(meta.get('name'), vector_val)
             elif el.tag == "i":
@@ -420,16 +421,16 @@ class VasprunContext(object):
         backend = parser.backend
         self.bands = None
         self.kpoints = None
-        self.weights = None        
-        for el in element:                             
+        self.weights = None
+        for el in element:
             if el.tag == "generation":
                 param = el.attrib.get("param", None) # eg. listgenerated, Monkhorst-Pack, Gamma
-                if param:                      
+                if param:
                     backend.addValue(
                         "x_vasp_k_points_generation_method", param)
                 if param == "listgenerated":
                     # This implies a path on k-space, potentially a bandstructure calculation
-                    # Save k-path info into a dictionary                    
+                    # Save k-path info into a dictionary
                     self.bands = {
                         "divisions": g(el, "i/[@name='divisions']", None),
                         "points": getVector(el)
@@ -440,7 +441,7 @@ class VasprunContext(object):
                     # Hence, do nothing: k-points will be stored in the `varray` if-block
                     pass
                 else:
-                    backend.pwarn("Unknown k point generation method '%s'" %(param)) 
+                    backend.pwarn("Unknown k point generation method '%s'" %(param))
             elif el.tag == "varray":
                 name = el.attrib.get("name", None)
                 if name == "kpointlist":
@@ -453,7 +454,7 @@ class VasprunContext(object):
                 else:
                     backend.pwarn("Unknown array %s in kpoints" % name)
             else:
-                backend.pwarn("Unknown tag %s in kpoints" % el.tag)        
+                backend.pwarn("Unknown tag %s in kpoints" % el.tag)
 
     def onEnd_structure(self, parser, event, element, pathStr):
         backend = parser.backend
@@ -661,7 +662,7 @@ class VasprunContext(object):
         backend.addArrayValues(
             "frame_sequence_local_frames_ref", np.asarray(self.singleConfCalcs))
         backend.closeSection("section_frame_sequence", frameSequenceGIndex)
-        
+
 
     def onEnd_calculation(self, parser, event, element, pathStr):
         eConv = eV2J
@@ -813,7 +814,7 @@ class VasprunContext(object):
                 backend.pwarn("unexpected tag %s in atominfo" % el.tag)
         self.labels = np.asarray(labels2) if labels2 else np.asarray(labels)
 
-    def incarOutTag(self, el):    
+    def incarOutTag(self, el):
         backend = self.parser.backend
         metaEnv = self.parser.backend.metaInfoEnv()
         if (el.tag != "i"):
@@ -821,26 +822,26 @@ class VasprunContext(object):
                           (el.tag, el.attrib, el.text))
         else:
             name    = el.attrib.get("name", None)
-            valType = el.attrib.get("type")            
+            valType = el.attrib.get("type")
             meta = metaEnv['x_vasp_incarOut_' + name]
-            
 
-            if not meta:                
-                # Unknown_Incars_Begin: storage into a dictionary 
+
+            if not meta:
+                # Unknown_Incars_Begin: storage into a dictionary
                 if not valType:
-                    # On vasp's xml files, valType *could* be absent if incar value is float 
+                    # On vasp's xml files, valType *could* be absent if incar value is float
                     valType = 'float'
 
                 # map vasp's datatype to nomad's datatype [b, f, i, C, D, R]
                 nomad_dtypeStr = vasp_to_metainfo_type_mapping[valType][0]
 
                 converter = metaTypeTransformers.get(nomad_dtypeStr)
-                text_value = el.text.strip() # text representation of incar value                       
-                try: 
+                text_value = el.text.strip() # text representation of incar value
+                try:
                     pyvalue = converter(text_value) # python data type
-                except Exception: 
+                except Exception:
                     pyvalue = text_value
-                
+
                 # save (name, pyvalue) into a dict
                 self.unknown_incars[name] = pyvalue
                 # Unknown_Incars_end
@@ -849,25 +850,25 @@ class VasprunContext(object):
                     valType = 'float'
 
                 vasp_metainfo_type = vasp_to_metainfo_type_mapping.get(valType)[0]
-                metainfo_type = meta.get('dtypeStr')                                
+                metainfo_type = meta.get('dtypeStr')
                 if not vasp_metainfo_type:
                     backend.pwarn("Unknown value type %s encountered in INCAR out: %s %s %r" % (
                         valType, el.tag, el.attrib, el.text))
 
-                elif metainfo_type != vasp_metainfo_type:                      
-                    if  (metainfo_type == 'C' and vasp_metainfo_type == 'b'):                  
+                elif metainfo_type != vasp_metainfo_type:
+                    if  (metainfo_type == 'C' and vasp_metainfo_type == 'b'):
                         pass
-                    elif  (metainfo_type == 'i' and vasp_metainfo_type == 'f'):                  
+                    elif  (metainfo_type == 'i' and vasp_metainfo_type == 'f'):
                         pass
                     else:
                         backend.pwarn("Data type mismatch: %s. Vasp_type: %s, metainfo_type: %s " %
                         (name, vasp_metainfo_type, metainfo_type))
-                try:                    
-                    shape = meta.get("shape", None)                    
-                    converter = metaTypeTransformers.get(metainfo_type)                                    
+                try:
+                    shape = meta.get("shape", None)
+                    converter = metaTypeTransformers.get(metainfo_type)
                     if not converter:
                         backend.pwarn(
-                            "could not find converter for dtypeStr %s when handling meta info %s" % 
+                            "could not find converter for dtypeStr %s when handling meta info %s" %
                             (metainfo_type, meta ))
                     elif shape:
                         vals = re.split("\s+", el.text.strip())
@@ -876,10 +877,10 @@ class VasprunContext(object):
                     else:
                         # If-block to handle incars without value
                         if el.text == None:
-                            el.text = ''                             
+                            el.text = ''
                         backend.addValue(meta["name"], converter(el.text))
 
-                except: 
+                except:
                     backend.pwarn("Exception trying to handle incarOut %s: %s" % (
                         name, traceback.format_exc()))
 
@@ -912,7 +913,7 @@ class VasprunContext(object):
                                 "section_XC_functionals")
                 elif name == "ISPIN":
                     self.ispin = int(el.text.strip())
-        
+
 
     def separatorScan(self, element, backend, depth=0):
         for separators in element:
@@ -952,7 +953,7 @@ class VasprunContext(object):
                     "mapping_section_method_basis_set_cell_associated", self.waveCut)
                 backend.closeNonOverlappingSection("section_method_basis_set")
             except AttributeError:
-                import traceback 
+                import traceback
                 traceback.print_exc()
                 backend.pwarn(
                     "Missing ENMAX for calculating plane wave basis cut off ")
@@ -1179,10 +1180,16 @@ class XmlParser(object):
                         self.tagSections[pathStr] = gIndexes
                 else:
                     raise Exception("Unexpected event %s" % event)
-        except:
+        except ParseError as e:
+            self.superContext.logger.warn("Could not complete parsing: %s" % e, exc_info=e)
+            backend.finishedParsingSession(
+                parserStatus="ParseSuccess",
+                parserErrors=["exception: %s" % e]
+            )
+        except Exception as e:
             backend.finishedParsingSession(
                 parserStatus="ParseFailure",
-                parserErrors=["exception: %s" % sys.exc_info()[1]]
+                parserErrors=["exception: %s" % e]
             )
         else:
             backend.finishedParsingSession(
