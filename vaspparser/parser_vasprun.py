@@ -378,6 +378,8 @@ class VasprunContext(object):
                         else:
                             backend.addValue(meta["name"], converter(el.text))
                     if name == 'GGA':
+                        # FIXME tmk: many options are not coded yet. See
+                        # https://www.vasp.at/wiki/index.php/GGA
                         fMap = {
                             '91': ['GGA_X_PW91', 'GGA_C_PW91'],
                             'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
@@ -493,12 +495,16 @@ class VasprunContext(object):
                     pos = getVector(el)
                     backend.addArrayValues(
                         "atom_positions", np.dot(np.asarray(pos), self.cell))
+                elif name == "selective":
+                    atom_sel = getVector(el, transform=lambda item: item == 'T')
+                    backend.addArrayValues(
+                        "x_vasp_selective_dynamics", np.asarray(atom_sel, dtype=np.bool))
                 else:
                     backend.pwarn(
                         "Unexpected varray in structure %s" % el.attrib)
             else:
                 backend.pwarn("Unexpected tag in structure %s %s %r" %
-                              el.tag, el.attrib, el.text)
+                              (el.tag, el.attrib, el.text))
         if self.labels is not None:
             backend.addArrayValues("atom_labels", self.labels)
 
@@ -1187,6 +1193,8 @@ class XmlParser(object):
                 parserErrors=["exception: %s" % e]
             )
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             backend.finishedParsingSession(
                 parserStatus="ParseFailure",
                 parserErrors=["exception: %s" % e]
