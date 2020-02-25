@@ -279,6 +279,8 @@ class VasprunContext(object):
         self.bands = None
         self.kpoints = None
         self.weights = None
+        self.tetrahedrons = None
+        self.tetrahedronVolume = None
         self.ispin = None
         self.ibrion = None
         self.lastSystemDescription = None
@@ -384,7 +386,8 @@ class VasprunContext(object):
                             '91': ['GGA_X_PW91', 'GGA_C_PW91'],
                             'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
                             'RP': ['GGA_X_RPBE', 'GGA_C_PBE'],
-                            'PS': ['GGA_C_PBE_SOL', 'GGA_X_PBE_SOL']
+                            'PS': ['GGA_C_PBE_SOL', 'GGA_X_PBE_SOL'],
+                            'MK': ['GGA_X_OPTB86_VDW']
                         }
                         functs = fMap.get(el.text.strip(), None)
                         if not functs:
@@ -453,10 +456,26 @@ class VasprunContext(object):
                     self.weights = np.asarray(getVector(el))
                     backend.addArrayValues(
                         "k_mesh_weights", self.weights.flatten())
+                elif name == "tetrahedronlist":
+                    self.tetrahedrons = np.asarray(getVector(el), dtype=np.int)
+                    backend.addArrayValues(
+                        "x_vasp_tetrahedrons_list", self.tetrahedrons)
                 else:
                     backend.pwarn("Unknown array %s in kpoints" % name)
+            elif el.tag == "i":
+                name = el.attrib.get("name", None)
+                if name == "volumeweight":
+                    ang2m = convert_unit_function("angstrom", "m")
+
+                    # get volume and transform to meters^3
+                    vol_cubic_angs = float(el.text.strip())
+                    vol_cubic_meters = ang2m(ang2m(ang2m(vol_cubic_angs)))
+
+                    backend.addArrayValues("x_vasp_tetrahedron_volume",
+                        vol_cubic_meters)
             else:
                 backend.pwarn("Unknown tag %s in kpoints" % el.tag)
+
 
     def onEnd_structure(self, parser, event, element, pathStr):
         backend = parser.backend
@@ -502,6 +521,9 @@ class VasprunContext(object):
                 else:
                     backend.pwarn(
                         "Unexpected varray in structure %s" % el.attrib)
+            elif el.tag == "nose":
+                nose = getVector(el)
+                backend.addArrayValues("x_vasp_nose_thermostat", nose)
             else:
                 backend.pwarn("Unexpected tag in structure %s %s %r" %
                               (el.tag, el.attrib, el.text))
@@ -904,6 +926,7 @@ class VasprunContext(object):
                         'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
                         'RP': ['GGA_X_RPBE', 'GGA_C_PBE'],
                         'PS': ['GGA_C_PBE_SOL', 'GGA_X_PBE_SOL'],
+                        'MK': ['GGA_X_OPTB86_VDW'],
                         '--': ['GGA_X_PBE', 'GGA_C_PBE']  # should check potcar
                     }
                     functs = fMap.get(el.text.strip(), None)
