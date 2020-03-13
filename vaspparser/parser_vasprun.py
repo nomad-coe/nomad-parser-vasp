@@ -344,6 +344,7 @@ class VasprunContext(object):
                 if not meta:
                     backend.pwarn("Unknown INCAR parameter (not registered in the meta data): %s %s %r" % (
                         el.tag, el.attrib, el.text))
+                    continue
                 #- -
                 vector_val = np.asarray(getVector(el))
                 backend.addArrayValues(meta.get('name'), vector_val)
