@@ -20,7 +20,7 @@ from ase.io import read as ase_read
 from nomadcore.simple_parser import SimpleMatcher
 from nomadcore.baseclasses import ParserInterface, MainHierarchicalParser
 
-from nomad.parsing import LocalBackend
+from nomad.parsing import Backend
 
 
 """
@@ -87,6 +87,6 @@ class MainParser(MainHierarchicalParser):
 
 
 if __name__ == "__main__":
-    parser = VaspOutcarParser(backend=LocalBackend)
+    parser = VaspOutcarParser(backend=Backend)
     parser.parse(sys.argv[1])
     print(parser.parser_context.super_backend)
