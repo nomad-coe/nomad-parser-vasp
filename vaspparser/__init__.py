@@ -25,8 +25,9 @@ from vaspparser.parser_vasprun import parserInfo
 from vaspparser.parser_vasprun import VasprunContext, XmlParser, parserInfo
 from vaspparser.parser_outcar import VaspOutcarParser
 
+from nomad.parsing.legacy import CoEInterfaceParser
 
-class VASPRunParser:
+class VASPRunMainParser:
     """
     The main parser class that is called for all run types. Parses the VASP
     .xml output files.
@@ -78,10 +79,16 @@ class VASPRunParserInterface(ParserInterface):
         dirpath = os.path.abspath(dirpath)
         self.parser_context.file_service.setup_root_folder(dirpath)
         self.parser_context.file_service.set_file_id(filename, "output")
-        self.main_parser = VASPRunParser(self.parser_context)
+        self.main_parser = VASPRunMainParser(self.parser_context)
 
     def get_metainfo_filename(self):
         return "vasp.nomadmetainfo.json"
 
     def get_parser_info(self):
         return parserInfo
+
+
+class VASPRunParser(CoEInterfaceParser):
+
+    def __init__(self):
+        super().__init__(VASPRunParserInterface)
