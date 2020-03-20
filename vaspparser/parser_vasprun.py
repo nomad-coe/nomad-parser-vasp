@@ -30,7 +30,6 @@ from math import pi
 import xml.etree.ElementTree as ET
 import logging
 
-from nomadcore.parser_backend import JsonParseEventsWriterBackend
 from nomadcore.local_meta_info import loadJsonFile, InfoKindEl
 from nomadcore.unit_conversion.unit_conversion import convert_unit_function
 from nomadcore.unit_conversion.unit_conversion import convert_unit
@@ -1236,13 +1235,3 @@ parserInfo = {
     "name": "parser_vasprun",
     "version": "1.0"
 }
-
-if __name__ == "__main__":
-    metaInfoPath = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(
-        __file__)), "../../../../../nomad-meta-info/meta_info/nomad_meta_info/vasp.nomadmetainfo.json"))
-    metaInfoEnv, warnings = loadJsonFile(
-        filePath=metaInfoPath, dependencyLoader=None, extraArgsHandling=InfoKindEl.ADD_EXTRA_ARGS, uri=None)
-    superContext = VasprunContext()
-    parser = XmlParser(parserInfo, superContext)
-    backend = JsonParseEventsWriterBackend(metaInfoEnv, sys.stdout)
-    parser.parse(sys.argv[1], open(sys.argv[2]), backend)
