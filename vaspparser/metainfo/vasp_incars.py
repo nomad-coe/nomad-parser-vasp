@@ -1663,7 +1663,7 @@ class section_method(public.section_method):
 
     x_vasp_incar_MAGMOM = Quantity(
         type=np.dtype(np.float64),
-        shape=[],
+        shape=['number_of_atoms'],
         description='''
         MAGMOM Specifies the initial magnetic moment for each atom, if and only if
         ICHARG=2, or if ICHARG=1 and the CHGCAR file contains no magnetisation density
