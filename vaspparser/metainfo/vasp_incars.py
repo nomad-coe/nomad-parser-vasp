@@ -856,7 +856,7 @@ class section_method(public.section_method):
 
     x_vasp_incar_KPOINT_BSE = Quantity(
         type=np.dtype(np.int32),
-        shape=[],
+        shape=['0..3'],
         description='''
         The flag KPOINT_BSE allows to calculate the dielectric matrix at one of the
         kpoints used to sample the Brillouin zone. NOTE: Either specify one or three
