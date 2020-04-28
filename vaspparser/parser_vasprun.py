@@ -37,83 +37,11 @@ from nomadcore.unit_conversion.unit_conversion import convert_unit
 eV2J = convert_unit_function("eV", "J")
 eV2JV = np.vectorize(eV2J)
 
-
-
-def crystal_structure_from_cell(cell, eps=1e-4):
-    """Return the crystal structure as a string calculated from the cell.
-    """
-    cellpar = ase.geometry.cell_to_cellpar(cell=cell)
-    abc = cellpar[:3]
-    angles = cellpar[3:] / 180 * pi
-    a, b, c = abc
-    alpha, beta, gamma = angles
-    # According to:
-    # https://www.physics-in-a-nutshell.com/article/6/symmetry-crystal-systems-and-bravais-lattices#the-seven-crystal-systems
-    # If a=b=c and alpha=beta=gamma=90degrees we have cubic.
-    if abc.ptp() < eps and abs(angles - pi / 2).max() < eps:
-        return 'cubic'
-    elif abc.ptp() < eps and abs(angles - pi / 3).max() < eps:
-        return 'fcc'
-    elif abc.ptp() < eps and abs(angles - np.arccos(-1 / 3)).max() < eps:
-        return 'bcc'
-    # If a=b!=c, alpha=beta=gamma=90deg, tetragonal.
-    elif abs(a - b) < eps and abs(angles - pi / 2).max() < eps:
-        return 'tetragonal'
-    elif abs(angles - pi / 2).max() < eps:
-        return 'orthorhombic'
-    # if a = b != c , alpha = beta = 90deg, gamma = 120deg, hexagonal
-    elif (abs(a - b) < eps
-          and abs(gamma - pi / 3 * 2) < eps
-          and abs(angles[:2] - pi / 2).max() < eps):
-        return 'hexagonal'
-    elif (c >= a and c >= b and alpha < pi / 2 and
-          abs(angles[1:] - pi / 2).max() < eps):
-        return 'monoclinic'
-    else:
-        raise ValueError('Cannot find crystal structure')
-
 vasp_to_metainfo_type_mapping = {
     'string': ['C'],
     'int': ['i'],
     'logical': ['b', 'C'],
     'float': ['f']}
-
-special_points = {
-    'cubic': {'Γ': [0, 0, 0],
-              'M': [1 / 2, 1 / 2, 0],
-              'R': [1 / 2, 1 / 2, 1 / 2],
-              'X': [0, 1 / 2, 0]},
-    'fcc': {'Γ': [0, 0, 0],
-            'K': [3 / 8, 3 / 8, 3 / 4],
-            'L': [1 / 2, 1 / 2, 1 / 2],
-            'U': [5 / 8, 1 / 4, 5 / 8],
-            'W': [1 / 2, 1 / 4, 3 / 4],
-            'X': [1 / 2, 0, 1 / 2]},
-    'bcc': {'Γ': [0, 0, 0],
-            'H': [1 / 2, -1 / 2, 1 / 2],
-            'P': [1 / 4, 1 / 4, 1 / 4],
-            'N': [0, 0, 1 / 2]},
-    'tetragonal': {'Γ': [0, 0, 0],
-                   'A': [1 / 2, 1 / 2, 1 / 2],
-                   'M': [1 / 2, 1 / 2, 0],
-                   'R': [0, 1 / 2, 1 / 2],
-                   'X': [0, 1 / 2, 0],
-                   'Z': [0, 0, 1 / 2]},
-    'orthorhombic': {'Γ': [0, 0, 0],
-                     'R': [1 / 2, 1 / 2, 1 / 2],
-                     'S': [1 / 2, 1 / 2, 0],
-                     'T': [0, 1 / 2, 1 / 2],
-                     'U': [1 / 2, 0, 1 / 2],
-                     'X': [1 / 2, 0, 0],
-                     'Y': [0, 1 / 2, 0],
-                     'Z': [0, 0, 1 / 2]},
-    'hexagonal': {'Γ': [0, 0, 0],
-                  'A': [0, 0, 1 / 2],
-                  'H': [1 / 3, 1 / 3, 1 / 2],
-                  'K': [1 / 3, 1 / 3, 0],
-                  'L': [1 / 2, 0, 1 / 2],
-                  'M': [1 / 2, 0, 0]}}
-
 
 special_paths = {
     'cubic': 'ΓXMΓRX,MR',
@@ -123,81 +51,6 @@ special_paths = {
     'orthorhombic': 'ΓXSYΓZURTZ,YT,UX,SR',
     'hexagonal': 'ΓMKΓALHA,LM,KH',
     'monoclinic': 'ΓYHCEM1AXH1,MDZ,YD'}
-
-
-def get_special_points(cell, eps=1e-4):
-    """Return dict of special points.
-
-    The definitions are from a paper by Wahyu Setyawana and Stefano
-    Curtarolo::
-
-        http://dx.doi.org/10.1016/j.commatsci.2010.05.010
-
-    lattice: str
-        One of the following: cubic, fcc, bcc, orthorhombic, tetragonal,
-        hexagonal or monoclinic.
-    cell: 3x3 ndarray
-        Unit cell.
-    eps: float
-        Tolerance for cell-check.
-    """
-
-    lattice = crystal_structure_from_cell(cell)
-
-    cellpar = ase.geometry.cell_to_cellpar(cell=cell)
-    abc = cellpar[:3]
-    angles = cellpar[3:] / 180 * pi
-    a, b, c = abc
-    alpha, beta, gamma = angles
-
-    # Check that the unit-cells are as in the Setyawana-Curtarolo paper:
-    if lattice == 'cubic':
-        assert abc.ptp() < eps and abs(angles - pi / 2).max() < eps
-    elif lattice == 'fcc':
-        assert abc.ptp() < eps and abs(angles - pi / 3).max() < eps
-    elif lattice == 'bcc':
-        angle = np.arccos(-1 / 3)
-        assert abc.ptp() < eps and abs(angles - angle).max() < eps
-    elif lattice == 'tetragonal':
-        assert abs(a - b) < eps and abs(angles - pi / 2).max() < eps
-    elif lattice == 'orthorhombic':
-        assert abs(angles - pi / 2).max() < eps
-    elif lattice == 'hexagonal':
-        assert abs(a - b) < eps
-        assert abs(gamma - pi / 3 * 2) < eps
-        assert abs(angles[:2] - pi / 2).max() < eps
-    elif lattice == 'monoclinic':
-        assert c >= a and c >= b
-        assert alpha < pi / 2 and abs(angles[1:] - pi / 2).max() < eps
-    if lattice != 'monoclinic':
-        return special_points[lattice]
-
-    # Here, we need the cell:
-    eta = (1 - b * np.cos(alpha) / c) / (2 * np.sin(alpha)**2)
-    nu = 1 / 2 - eta * c * np.cos(alpha) / b
-    return {'Γ': [0, 0, 0],
-            'A': [1 / 2, 1 / 2, 0],
-            'C': [0, 1 / 2, 1 / 2],
-            'D': [1 / 2, 0, 1 / 2],
-            'D1': [1 / 2, 0, -1 / 2],
-            'E': [1 / 2, 1 / 2, 1 / 2],
-            'H': [0, eta, 1 - nu],
-            'H1': [0, 1 - eta, nu],
-            'H2': [0, eta, -nu],
-            'M': [1 / 2, eta, 1 - nu],
-            'M1': [1 / 2, 1 - eta, nu],
-            'M2': [1 / 2, eta, -nu],
-            'X': [0, 1 / 2, 0],
-            'Y': [0, 0, 1 / 2],
-            'Y1': [0, 0, -1 / 2],
-            'Z': [1 / 2, 0, 0]}
-
-
-def findLabel(labels, value):
-    for k, v in labels.items():
-        if np.all(np.abs(v-value) < 1.e-5):
-            return k
-    return "?"
 
 
 def secondsFromEpoch(date):
@@ -603,7 +456,7 @@ class VasprunContext(object):
                         kpt = np.reshape(
                             self.kpoints, (nsegments, divisions, 3))
                         energies = np.reshape(
-                            ev, (self.ispin, nsegments, divisions,  bands.shape[0]))
+                            ev, (self.ispin, nsegments, divisions, bands.shape[0]))
                         occ = np.reshape(
                             occupation, (self.ispin, nsegments, divisions, bands.shape[0]))
                         for isegment in range(nsegments):
@@ -623,12 +476,6 @@ class VasprunContext(object):
                         backend.closeNonOverlappingSection("section_k_band")
                         backend.openNonOverlappingSection(
                             "section_k_band_normalized")
-                        specialPoints = {}
-                        try:
-                            specialPoints = get_special_points(
-                                convert_unit_function("m", "angstrom")(self.cell))
-                        except Exception as e:
-                            self.logger.warn("failed to get special points/xtal structure", exc_info=e)
                         for isegment in range(nsegments):
                             backend.openNonOverlappingSection(
                                 "section_k_band_segment_normalized")
@@ -640,9 +487,6 @@ class VasprunContext(object):
                                 "band_k_points_normalized", kpt[isegment])
                             backend.addArrayValues("band_segm_start_end_normalized", np.asarray(
                                 [kpt[isegment, 0], kpt[isegment, divisions - 1]]))
-                            backend.addValue("band_segm_labels_normalized",
-                                             [findLabel(specialPoints, kpt[isegment, 0]),
-                                              findLabel(specialPoints, kpt[isegment, divisions - 1])])
                             backend.closeNonOverlappingSection(
                                 "section_k_band_segment_normalized")
 
