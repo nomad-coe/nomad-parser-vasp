@@ -120,7 +120,7 @@ class section_system(public.section_system):
     m_def = Section(validate=False, extends_base_section=True, a_legacy=LegacyDefinition(name='section_system'))
 
     x_vasp_selective_dynamics = Quantity(
-        type=bool,
+        type=np.dtype(np.bool),
         shape=['number_of_atoms', 3],
         description='''
         Boolean array to eiter allow or forbid coordinate modifications during relaxation
