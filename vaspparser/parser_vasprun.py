@@ -888,7 +888,8 @@ class VasprunContext(object):
                                 backend.addArrayValues("dos_energies", dosE)
                                 backend.addArrayValues(
                                     "dos_energies_normalized", dosE - eRef)
-                                backend.addArrayValues("dos_values", dosV)
+                                cell_volume = np.abs(np.linalg.det(self.cell))
+                                backend.addArrayValues("dos_values", dosV * cell_volume)
                                 backend.addArrayValues(
                                     "dos_integrated_values", dosI)
                             else:
