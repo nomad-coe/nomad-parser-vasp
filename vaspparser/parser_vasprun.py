@@ -881,13 +881,7 @@ class VasprunContext(object):
                                 joule_in_ev = convert_unit(1, "eV", "J")
                                 dosV = dosV / joule_in_ev
 
-                                if self.vbTopE:
-                                    eRef = max(self.vbTopE)
-                                else:
-                                    eRef = self.eFermi
                                 backend.addArrayValues("dos_energies", dosE)
-                                backend.addArrayValues(
-                                    "dos_energies_normalized", dosE - eRef)
                                 cell_volume = np.abs(np.linalg.det(self.cell))
                                 backend.addArrayValues("dos_values", dosV * cell_volume)
                                 backend.addArrayValues(
