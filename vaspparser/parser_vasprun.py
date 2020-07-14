@@ -842,9 +842,8 @@ class VasprunContext(object):
             if el.tag == "i":
                 if el.attrib.get("name") == "efermi":
                     self.eFermi = eV2J(float(el.text.strip()))
-                    backend.addValue("dos_fermi_energy", self.eFermi)
                     backend.addArrayValues(
-                        "energy_reference_fermi", np.array([self.eFermi]*self.ispin))
+                        "energy_reference_fermi", np.array([self.eFermi] * self.ispin))
                 else:
                     backend.pwarn("unexpected tag %s %s in dos" %
                                   (el.tag, el.attrib))
