@@ -18,28 +18,32 @@ import gzip
 import bz2
 import lzma
 
-from nomadcore.baseclasses import ParserInterface
-import nomadcore.baseclasses
-
-from vaspparser.parser_vasprun import parserInfo
-from vaspparser.parser_vasprun import VasprunContext, XmlParser, parserInfo
+from .metainfo import m_env
+from vaspparser.parser_vasprun import VasprunContext, XmlParser, parser_info
+from nomad.parsing.parser import MatchingParser
 from vaspparser.parser_outcar import VaspOutcarParser
 
-from nomad.parsing.legacy import CoEInterfaceParser
 
-class VASPRunMainParser:
-    """
-    The main parser class that is called for all run types. Parses the VASP
-    .xml output files.
-    """
-    def __init__(self, parser_context):
-        self.parser_context = parser_context
+class VASPParser(MatchingParser):
+    def __init__(self):
+        super().__init__(
+            name='parsers/vasp', code_name='VASP', code_homepage='https://www.vasp.at/',
+            mainfile_mime_re=r'(application/.*)|(text/.*)',
+            mainfile_contents_re=(
+                r'^\s*<\?xml version="1\.0" encoding="ISO-8859-1"\?>\s*'
+                r'?\s*<modeling>'
+                r'?\s*<generator>'
+                r'?\s*<i name="program" type="string">\s*vasp\s*</i>'
+                r'?'),
+            supported_compressions=['gz', 'bz2', 'xz']
+        )
 
-    def parse(self, filepath):
-        # the nomadcore.baseclasses.logger is set for each parsing run
-        superContext = VasprunContext(logger=nomadcore.baseclasses.logger)
-        parser = XmlParser(parserInfo, superContext)
-        backend = self.parser_context.super_backend
+    def run(self, filepath, logger=None):
+        self._metainfo_env = m_env
+
+        super_context = VasprunContext(logger=logger)
+
+        parser = XmlParser(parser_info, super_context, metainfo_env=m_env)
 
         open_file = open
         if filepath.endswith('.gz'):
@@ -49,46 +53,5 @@ class VASPRunMainParser:
         elif filepath.endswith('.xz'):
             open_file = lzma.open
 
-        parser.parse(os.path.abspath(filepath), open_file(filepath, 'rt'), backend)
-
-
-class VASPRunParserInterface(ParserInterface):
-    """
-    This class handles the initial setup before any parsing can happen. It
-    determines which version of BigDFT was used to generate the output and then
-    sets up a correct main parser.
-
-    After the implementation has been setup, you can parse the files with
-    parse().
-    """
-    def __init__(
-            self,
-            metainfo_to_keep=None, backend=None, default_units=None,
-            metainfo_units=None, debug=True, log_level=logging.ERROR, store=True):
-
-        super(VASPRunParserInterface, self).__init__(
-            metainfo_to_keep, backend, default_units, metainfo_units, debug, log_level, store)
-
-    def setup_version(self):
-        """
-        Setups the version by looking at the output file and the version
-        specified in it.
-        """
-        # Setup the root folder to the fileservice that is used to access files
-        dirpath, filename = os.path.split(self.parser_context.main_file)
-        dirpath = os.path.abspath(dirpath)
-        self.parser_context.file_service.setup_root_folder(dirpath)
-        self.parser_context.file_service.set_file_id(filename, "output")
-        self.main_parser = VASPRunMainParser(self.parser_context)
-
-    def get_metainfo_filename(self):
-        return "vasp.nomadmetainfo.json"
-
-    def get_parser_info(self):
-        return parserInfo
-
-
-class VASPRunParser(CoEInterfaceParser):
-
-    def __init__(self):
-        super().__init__(VASPRunParserInterface)
+        parser.parse(os.path.abspath(filepath), open_file(filepath, 'rt'))
+        return parser.root_section
