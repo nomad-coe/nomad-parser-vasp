@@ -954,13 +954,13 @@ class XmlParser(object):
         self.tagSections = {}
         self.metainfo_env = metainfo_env
 
-    def parse(self, main_file_uri, f_in):
+    def parse(self, main_file_uri, f_in, archive):
         if self.path:
             raise Exception(
                 "Parse of %s called with non empty path, parse already in progress?" % main_file_uri)
         self.main_file_uri = main_file_uri
         self.f_in = f_in
-        self.root_section = msection_run()
+        self.root_section = archive.m_create(msection_run)
         self.super_context.parser = self
         # there are invalid characters like esc in the files, we do not want to crash on them
         xml_parser = MyXMLParser()

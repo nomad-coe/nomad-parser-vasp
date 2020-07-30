@@ -18,13 +18,15 @@ import gzip
 import bz2
 import lzma
 
+from nomad.datamodel import EntryArchive
+
 from .metainfo import m_env
 from vaspparser.parser_vasprun import VasprunContext, XmlParser, parser_info
-from nomad.parsing.parser import MatchingParser
+from nomad.parsing.parser import FairdiParser
 from vaspparser.parser_outcar import VaspOutcarParser
 
 
-class VASPParser(MatchingParser):
+class VASPParser(FairdiParser):
     def __init__(self):
         super().__init__(
             name='parsers/vasp', code_name='VASP', code_homepage='https://www.vasp.at/',
@@ -38,7 +40,7 @@ class VASPParser(MatchingParser):
             supported_compressions=['gz', 'bz2', 'xz']
         )
 
-    def run(self, filepath, logger=None):
+    def parse(self, filepath, archive, logger=None):
         self._metainfo_env = m_env
 
         super_context = VasprunContext(logger=logger)
@@ -53,5 +55,4 @@ class VASPParser(MatchingParser):
         elif filepath.endswith('.xz'):
             open_file = lzma.open
 
-        parser.parse(os.path.abspath(filepath), open_file(filepath, 'rt'))
-        return parser.root_section
+        parser.parse(os.path.abspath(filepath), open_file(filepath, 'rt'), archive)
