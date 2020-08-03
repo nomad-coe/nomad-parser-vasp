@@ -35,7 +35,7 @@ from nomad.datamodel.metainfo.public import section_run as msection_run
 from nomad.datamodel.metainfo.public import section_method as msection_method
 from nomad.datamodel.metainfo.public import section_sampling_method as msection_sampling_method
 from nomad.datamodel.metainfo.public import section_frame_sequence as msection_frame_sequence
-from nomad.datamodel.metainfo.public import section_workflow as msection_workflow
+from nomad.datamodel.metainfo.public import Workflow
 from nomad.datamodel.metainfo.public import section_single_configuration_calculation as msection_single_configuration_calculation
 from nomad.datamodel.metainfo.public import section_basis_set as msection_basis_set
 from nomad.datamodel.metainfo.public import section_XC_functionals as msection_XC_functionals
@@ -176,10 +176,10 @@ class VasprunContext(object):
         self._parser = name
 
     def on_end_generator(self, element, path_str):
-        root_section = self.parser.root_section
+        run = self.parser.run
         program_name = g(element, "i/[@name='program']")
         if program_name.strip().upper() == 'VASP':
-            root_section.program_name = 'VASP'
+            run.program_name = 'VASP'
         else:
             raise Exception('unexpected program name: %s' % program_name)
 
@@ -189,9 +189,9 @@ class VasprunContext(object):
             g(element, "i/[@name='platform']", ""))
 
         if not version.isspace():
-            root_section.program_version = version
+            run.program_version = version
 
-        root_section.program_basis_set_type = "plane waves"
+        run.program_basis_set_type = "plane waves"
         date = g(element, "i/[@name='date']")
         pdate = None
         time = g(element, "i/[@name='time']")
@@ -202,7 +202,7 @@ class VasprunContext(object):
             pdate = datetime.combine(pdate.date(), datetime.strptime(
                 time.strip(), "%H:%M:%S").timetz())
         if pdate:
-            root_section.program_compilation_datetime = seconds_from_epoch(pdate)
+            run.program_compilation_datetime = seconds_from_epoch(pdate)
         for i in element:
             if i.tag != "i" or not i.attrib.get("name") in set(
                 [
@@ -211,9 +211,9 @@ class VasprunContext(object):
                 pass
 
     def on_end_incar(self, element, path_str):
-        root_section = self.parser.root_section
+        run = self.parser.run
         m_env = self.parser.metainfo_env
-        section_method = root_section.m_create(msection_method)
+        section_method = run.m_create(msection_method)
         dft_plus_u = False
         ibrion = None
         nsw = 0
@@ -299,7 +299,7 @@ class VasprunContext(object):
         section_method.electronic_structure_method = 'DFT+U' if dft_plus_u else 'DFT'
 
     def on_end_kpoints(self, element, path_str):
-        root_section = self.parser.root_section
+        run = self.parser.run
         self.bands = None
         self.kpoints = None
         self.weights = None
@@ -307,7 +307,7 @@ class VasprunContext(object):
             if el.tag == "generation":
                 param = el.attrib.get("param", None)  # eg. listgenerated, Monkhorst-Pack, Gamma
                 if param:
-                    root_section.section_method[-1].x_vasp_k_points_generation_method = param
+                    run.section_method[-1].x_vasp_k_points_generation_method = param
                 if param == "listgenerated":
                     # This implies a path on k-space, potentially a bandstructure calculation
                     # Save k-path info into a dictionary
@@ -326,13 +326,13 @@ class VasprunContext(object):
                 name = el.attrib.get("name", None)
                 if name == "kpointlist":
                     self.kpoints = np.asarray(get_vector(el))
-                    root_section.section_method[-1].k_mesh_points = self.kpoints
+                    run.section_method[-1].k_mesh_points = self.kpoints
                 elif name == "weights":
                     self.weights = np.asarray(get_vector(el))
-                    root_section.section_method[-1].k_mesh_weights = self.weights.flatten()
+                    run.section_method[-1].k_mesh_weights = self.weights.flatten()
                 elif name == "tetrahedronlist":
                     self.tetrahedrons = np.asarray(get_vector(el), dtype=np.int)
-                    root_section.section_method[-1].x_vasp_tetrahedrons_list = self.tetrahedrons
+                    run.section_method[-1].x_vasp_tetrahedrons_list = self.tetrahedrons
                 else:
                     self.logger.warn("Unknown array %s in kpoints" % name)
             elif el.tag == "i":
@@ -344,13 +344,13 @@ class VasprunContext(object):
                     vol_cubic_angs = float(el.text.strip())
                     vol_cubic_meters = ang2m(ang2m(ang2m(vol_cubic_angs)))
 
-                    root_section.section_method[-1].x_vasp_tetrahedron_volume = vol_cubic_meters
+                    run.section_method[-1].x_vasp_tetrahedron_volume = vol_cubic_meters
             else:
                 self.logger.pwarn("Unknown tag %s in kpoints" % el.tag)
 
     def on_end_structure(self, element, path_str):
-        root_section = self.parser.root_section
-        section_system = root_section.m_create(msection_system)
+        run = self.parser.run
+        section_system = run.m_create(msection_system)
         self.cell = None
         for el in element:
             if (el.tag == "crystal"):
@@ -399,7 +399,7 @@ class VasprunContext(object):
     def on_end_eigenvalues(self, element, path_str):
         if path_str != "modeling/calculation/eigenvalues":
             return True
-        root_section = self.parser.root_section
+        run = self.parser.run
         eigenvalues = None
         occupation = None
         for el in element:
@@ -458,11 +458,11 @@ class VasprunContext(object):
                                     ebMinE[ispin] = ebMinK
                     self.vbTopE = vbTopE
                     self.ebMinE = ebMinE
-                    root_section.section_single_configuration_calculation[-1].energy_reference_highest_occupied = np.array(vbTopE)
-                    root_section.section_single_configuration_calculation[-1].energy_reference_lowest_unoccupied = np.array(ebMinE)
+                    run.section_single_configuration_calculation[-1].energy_reference_highest_occupied = np.array(vbTopE)
+                    run.section_single_configuration_calculation[-1].energy_reference_lowest_unoccupied = np.array(ebMinE)
                     if self.bands:
                         divisions = int(self.bands['divisions'])
-                        section_k_band = root_section.section_single_configuration_calculation[-1].m_create(msection_k_band)
+                        section_k_band = run.section_single_configuration_calculation[-1].m_create(msection_k_band)
                         nsegments = self.kpoints.shape[0] // divisions
                         kpt = np.reshape(
                             self.kpoints, (nsegments, divisions, 3))
@@ -479,7 +479,7 @@ class VasprunContext(object):
                             section_k_band_segment.band_segm_start_end = np.asarray(
                                 [kpt[isegment, 0], kpt[isegment, divisions - 1]])
 
-                        section_k_band_normalized = root_section.section_single_configuration_calculation[-1].m_create(msection_k_band_normalized)
+                        section_k_band_normalized = run.section_single_configuration_calculation[-1].m_create(msection_k_band_normalized)
                         for isegment in range(nsegments):
                             section_k_band_segment_normalized = section_k_band_normalized.m_create(msection_k_band_segment_normalized)
                             section_k_band_segment_normalized.band_energies_normalized = energies[:, isegment, :, :] - max(self.vbTopE)
@@ -489,36 +489,36 @@ class VasprunContext(object):
                                 [kpt[isegment, 0], kpt[isegment, divisions - 1]])
 
                     else:
-                        section_eigenvalues = root_section.section_single_configuration_calculation[-1].m_create(msection_eigenvalues)
+                        section_eigenvalues = run.section_single_configuration_calculation[-1].m_create(msection_eigenvalues)
                         section_eigenvalues.eigenvalues_values = ev
                         section_eigenvalues.eigenvalues_occupation = occupation
             else:
                 self.logger.warn("unexpected tag %s in the eigenvalues" % el.tag)
 
     def on_start_calculation(self, element, path_str):
-        root_section = self.parser.root_section
-        sscc = root_section.m_create(msection_single_configuration_calculation)
+        run = self.parser.run
+        sscc = run.m_create(msection_single_configuration_calculation)
         if self.waveCut:
             section_basis_set = sscc.m_create(msection_basis_set)
             section_basis_set.mapping_section_basis_set_cell_dependent = self.waveCut
 
     def on_end_modeling(self, element, path_str):
-        root_section = self.parser.root_section
-        root_section.section_method[-1].x_vasp_unknown_incars = self.unknown_incars
+        run = self.parser.run
+        run.section_method[-1].x_vasp_unknown_incars = self.unknown_incars
         if self.ibrion is None or self.ibrion == -1:
             return
-        section_sampling_method = root_section.m_create(msection_sampling_method)
+        section_sampling_method = run.m_create(msection_sampling_method)
         if self.ibrion == 0:
             sampling_method = "molecular_dynamics"
         else:
             sampling_method = "geometry_optimization"
         section_sampling_method.sampling_method = sampling_method
-        section_frame_sequence = root_section.m_create(msection_frame_sequence)
+        section_frame_sequence = run.m_create(msection_frame_sequence)
         section_frame_sequence.frame_sequence_to_sampling_ref = section_sampling_method
-        section_frame_sequence.frame_sequence_local_frames_ref = root_section.section_single_configuration_calculation[-1]
-        section_workflow = root_section.m_create(msection_workflow)
+        section_frame_sequence.frame_sequence_local_frames_ref = run.section_single_configuration_calculation[-1]
+        section_workflow = self.parser.archive.m_create(Workflow)
         section_workflow.workflow_type = sampling_method
-        section_workflow.workflow_final_calculation_ref = root_section.section_single_configuration_calculation[-1]
+        section_workflow.workflow_final_calculation_ref = run.section_single_configuration_calculation[-1]
         if len(self._energies) > 1:
             delta_energy = abs(self._energies[-1] - self._energies[-2])
             section_workflow.relaxation_energy_tolerance = delta_energy
@@ -527,10 +527,10 @@ class VasprunContext(object):
         e_conv = eV2J
         f_conv = convert_unit_function("eV/angstrom", "N")
         p_conv = convert_unit_function("eV/angstrom^3", "Pa")
-        root_section = self.parser.root_section
-        sscc = root_section.section_single_configuration_calculation[-1]
-        sscc.single_configuration_calculation_to_system_ref = root_section.section_system[-1]
-        sscc.single_configuration_to_calculation_method_ref = root_section.section_method[-1]
+        run = self.parser.run
+        sscc = run.section_single_configuration_calculation[-1]
+        sscc.single_configuration_calculation_to_system_ref = run.section_system[-1]
+        sscc.single_configuration_to_calculation_method_ref = run.section_method[-1]
         for el in element:
             if el.tag == "energy":
                 for en_el in el:
@@ -556,7 +556,7 @@ class VasprunContext(object):
                             sscc.stress_tensor = f
 
     def on_end_atominfo(self, element, path_str):
-        root_section = self.parser.root_section
+        run = self.parser.run
         atom_types = []
         labels = []
         labels2 = None
@@ -625,7 +625,7 @@ class VasprunContext(object):
                     n_el = {}
                     kind_labels = []
                     for atom_desc in atom_types_desc:
-                        section_method_atom_kind = root_section.section_method[-1].m_create(msection_method_atom_kind)
+                        section_method_atom_kind = run.section_method[-1].m_create(msection_method_atom_kind)
                         if 'element' in atom_desc:
                             elName = atom_desc['element'].strip()
                             try:
@@ -647,7 +647,7 @@ class VasprunContext(object):
                                 section_method_atom_kind.method_atom_kind_explicit_electrons = atom_desc["valence"]
                             if "pseudopotential" in atom_desc:
                                 section_method_atom_kind.method_atom_kind_pseudopotential_name = atom_desc["pseudopotential"]
-                    root_section.section_method[-1].x_vasp_atom_kind_refs = root_section.section_method[-1].section_method_atom_kind
+                    run.section_method[-1].x_vasp_atom_kind_refs = run.section_method[-1].section_method_atom_kind
                     labels2 = [kind_labels[i - 1] for i in atom_types]
                 else:
                     self.logger.warn(
@@ -674,7 +674,7 @@ class VasprunContext(object):
             self.logger.warn("unexpected tag %s %s %r in incar" % (el.tag, el.attrib, el.text))
 
         else:
-            root_section = self.parser.root_section
+            run = self.parser.run
             name = el.attrib.get("name", None)
             val_type = el.attrib.get("type")
             try:
@@ -729,12 +729,12 @@ class VasprunContext(object):
                             (metainfo_type, meta))
                     elif shape:
                         vals = re.split(r"\s+", el.text.strip())
-                        setattr(root_section.section_method[-1], meta["name"], [converter(x) for x in vals])
+                        setattr(run.section_method[-1], meta["name"], [converter(x) for x in vals])
                     else:
                         # If-block to handle incars without value
                         if not el.text:
                             el.text = ''
-                        setattr(root_section.section_method[-1], meta["name"], converter(el.text))
+                        setattr(run.section_method[-1], meta["name"], converter(el.text))
 
                 except Exception:
                     self.logger.warn("Exception trying to handle incarOut %s: %s" % (
@@ -762,7 +762,7 @@ class VasprunContext(object):
                         self.logger.warn("Unknown XC functional %s" % el.text.strip())
                     else:
                         for f in functs:
-                            section_XC_functionals = root_section.section_method[-1].m_create(msection_XC_functionals)
+                            section_XC_functionals = run.section_method[-1].m_create(msection_XC_functionals)
                             section_XC_functionals.XC_functional_name = f
                 elif name == "ISPIN":
                     self.ispin = int(el.text.strip())
@@ -784,15 +784,15 @@ class VasprunContext(object):
 
     def on_end_parameters(self, element, path_str):
         self._separator_scan(element)
-        root_section = self.parser.root_section
+        run = self.parser.run
         try:
             self.prec
             try:
                 self.enmax
-                self.waveCut = root_section.m_create(msection_basis_set_cell_dependent)
+                self.waveCut = run.m_create(msection_basis_set_cell_dependent)
                 self.waveCut.basis_set_planewave_cutoff = eV2J(self.enmax * self.prec)
 
-                section_method_basis_set = root_section.section_method[-1].m_create(msection_method_basis_set)
+                section_method_basis_set = run.section_method[-1].m_create(msection_method_basis_set)
                 section_method_basis_set.mapping_section_method_basis_set_cell_associated = self.waveCut
             except AttributeError:
                 import traceback
@@ -805,8 +805,8 @@ class VasprunContext(object):
 
     def on_end_dos(self, element, path_str):
         "density of states"
-        root_section = self.parser.root_section
-        section_dos = root_section.section_single_configuration_calculation[-1].m_create(msection_dos)
+        run = self.parser.run
+        section_dos = run.section_single_configuration_calculation[-1].m_create(msection_dos)
         for el in element:
             if el.tag == "i":
                 if el.attrib.get("name") == "efermi":
@@ -953,6 +953,8 @@ class XmlParser(object):
         self.path = []
         self.tagSections = {}
         self.metainfo_env = metainfo_env
+        self.run = None
+        self.archive = None
 
     def parse(self, main_file_uri, f_in, archive):
         if self.path:
@@ -960,7 +962,8 @@ class XmlParser(object):
                 "Parse of %s called with non empty path, parse already in progress?" % main_file_uri)
         self.main_file_uri = main_file_uri
         self.f_in = f_in
-        self.root_section = archive.m_create(msection_run)
+        self.archive = archive
+        self.run = archive.m_create(msection_run)
         self.super_context.parser = self
         # there are invalid characters like esc in the files, we do not want to crash on them
         xml_parser = MyXMLParser()
