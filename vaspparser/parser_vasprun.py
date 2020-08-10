@@ -35,7 +35,6 @@ from nomad.datamodel.metainfo.public import section_run as msection_run
 from nomad.datamodel.metainfo.public import section_method as msection_method
 from nomad.datamodel.metainfo.public import section_sampling_method as msection_sampling_method
 from nomad.datamodel.metainfo.public import section_frame_sequence as msection_frame_sequence
-from nomad.datamodel.metainfo.public import Workflow
 from nomad.datamodel.metainfo.public import section_single_configuration_calculation as msection_single_configuration_calculation
 from nomad.datamodel.metainfo.public import section_basis_set as msection_basis_set
 from nomad.datamodel.metainfo.public import section_XC_functionals as msection_XC_functionals
@@ -516,12 +515,6 @@ class VasprunContext(object):
         section_frame_sequence = run.m_create(msection_frame_sequence)
         section_frame_sequence.frame_sequence_to_sampling_ref = section_sampling_method
         section_frame_sequence.frame_sequence_local_frames_ref = run.section_single_configuration_calculation[-1]
-        section_workflow = self.parser.archive.m_create(Workflow)
-        section_workflow.workflow_type = sampling_method
-        section_workflow.workflow_final_calculation_ref = run.section_single_configuration_calculation[-1]
-        if len(self._energies) > 1:
-            delta_energy = abs(self._energies[-1] - self._energies[-2])
-            section_workflow.relaxation_energy_tolerance = delta_energy
 
     def on_end_calculation(self, element, path_str):
         e_conv = eV2J
@@ -547,13 +540,16 @@ class VasprunContext(object):
                             sscc.energy_total_T0 = value
                             self._energies.append(value)
                     elif en_el.tag == "varray":
-                        name = en_el.attrib.get("name", None)
-                        if name == "forces":
-                            f = get_vector(en_el, lambda x: f_conv(float(x)))
-                            sscc.atom_forces = f
-                        elif name == 'stress':
-                            f = get_vector(en_el, lambda x: p_conv(float(x)))
-                            sscc.stress_tensor = f
+                        pass
+
+            elif el.tag == 'varray':
+                name = el.attrib.get("name", None)
+                if name == "forces":
+                    f = get_vector(el, lambda x: f_conv(float(x)))
+                    sscc.atom_forces = f
+                elif name == 'stress':
+                    f = get_vector(el, lambda x: p_conv(float(x)))
+                    sscc.stress_tensor = f
 
     def on_end_atominfo(self, element, path_str):
         run = self.parser.run
