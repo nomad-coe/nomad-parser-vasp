@@ -993,7 +993,7 @@ class XmlParser(object):
                 else:
                     raise Exception("Unexpected event %s" % event)
         except ParseError as e:
-            self.super_context.logger.warn("Could not complete parsing: %s" % e, exc_info=e)
+            self.super_context.logger.error("Could not complete parsing: %s" % e, exc_info=e)
         except Exception as e:
             import traceback
             traceback.print_exc()
