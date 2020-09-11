@@ -1,10 +1,10 @@
-code-label: VASP
-code-label-style: All in capitals
-code-url: https://www.vasp.at/
-parser-dir-name: dependencies/parsers/vasp/
-parser-git-url: https://gitlab.mpcdf.mpg.de/nomad-lab/parser-vasp
-parser-specific: ''
-table-of-files: |
+codeLabel: VASP
+codeLabelStyle: All in capitals
+codeUrl: https://www.vasp.at/
+parserDirName: dependencies/parsers/vasp/
+parserGitUrl: https://gitlab.mpcdf.mpg.de/nomad-lab/parser-vasp
+parserSpecific: ''
+tableOfFiles: |
   |Input Filename| Description|
   |--- | --- |
   |`vasprun.xml` | **Mainfile** in plain-text (structured) XML format |
