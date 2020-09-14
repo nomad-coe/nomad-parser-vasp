@@ -219,7 +219,11 @@ class VasprunContext(object):
         for el in element:
             if el.tag == "v":
                 name = el.attrib.get("name", None)
-                meta = m_env.resolve_definition('x_vasp_incar_' + name, Quantity)
+                meta = None
+                try:
+                    meta = m_env.resolve_definition('x_vasp_incar_' + name, Quantity)
+                except KeyError:
+                    pass
                 if not meta:
                     self.logger.warn(
                         "Unknown INCAR parameter (not registered in the meta data): %s %s %r" % (
@@ -229,7 +233,11 @@ class VasprunContext(object):
                 setattr(section_method, meta.get('name'), vector_val)
             elif el.tag == "i":
                 name = el.attrib.get("name", None)
-                meta = m_env.resolve_definition('x_vasp_incar_' + name, Quantity)
+                meta = None
+                try:
+                    meta = m_env.resolve_definition('x_vasp_incar_' + name, Quantity)
+                except KeyError:
+                    pass
                 val_type = el.attrib.get("type")
                 if not meta:
                     self.logger.warn(
