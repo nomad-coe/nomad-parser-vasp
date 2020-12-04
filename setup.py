@@ -22,7 +22,7 @@ def main():
         description='NOMAD parser implementation for VASP.',
         author='Fawzi Mohamed, Lauri Himanen, Danio Brambila, Ankit Kariryaa, Henning Glawe',
         license='APACHE 2.0',
-        packages=find_packages(),
+        packages=find_packages(exclude=['test']),
         install_requires=[
             'nomadcore'
         ],
