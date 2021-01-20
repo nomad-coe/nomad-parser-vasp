@@ -1374,7 +1374,7 @@ class section_method(public.section_method):
         a_legacy=LegacyDefinition(name='x_vasp_incar_LPLANE'))
 
     x_vasp_incar_LREAL = Quantity(
-        type=str,
+        type=bool,
         shape=[],
         description='''
         LREAL determines whether the projection operators are evaluated in real-space or
