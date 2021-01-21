@@ -174,6 +174,19 @@ class VASPParserInterface:
         self._atom_info = None
         self._header = None
 
+        self.metainfo_mapping = {
+            'e_fr_energy': 'energy_free', 'e_wo_entrp': 'energy_total',
+            'e_0_energy': 'energy_total_T0', 'hartreedc': 'energy_hartree_error',
+            'XCdc': 'energy_XC', 'forces': 'atom_forces', 'stress': 'stress_tensor',
+            'energy_total': 'energy_free', 'energy_T0': 'energy_total_T0',
+            'energy_entropy0': 'energy_total', 'DENC': 'energy_hartree_error',
+            'EXHF': 'energy_X', 'EBANDS': 'energy_sum_eigenvalues'}
+
+        self.xc_functional_mapping = {
+            '91': ['GGA_X_PW91', 'GGA_C_PW91'], 'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
+            'RP': ['GGA_X_RPBE', 'GGA_C_PBE'], 'PS': ['GGA_C_PBE_SOL', 'GGA_X_PBE_SOL'],
+            'MK': ['GGA_X_OPTB86_VDW'], '--': ['GGA_X_PBE', 'GGA_C_PBE']}
+
     def init_parser(self, mainfile, logger):
         if 'OUTCAR' in mainfile:
             self.parser = 'outcar'
@@ -187,6 +200,9 @@ class VASPParserInterface:
         self._kpoints_info = None
         self._atom_info = None
         self._header = None
+
+    def reuse_parser(self, parser):
+        self.outcar_parser.quantities = parser.outcar_parser.quantities
 
     def _get_key_values(self, path):
         if self.parser == 'outcar':
@@ -680,42 +696,11 @@ class VASPParserInterface:
 
         return dos, fields
 
-
-class VASPParser(FairdiParser):
-    def __init__(self):
-        super().__init__(
-            name='parsers/vasp', code_name='VASP', code_homepage='https://www.vasp.at/',
-            mainfile_mime_re=r'(application/.*)|(text/.*)',
-            mainfile_name_re=r'xml(\.gz|\.bz|\.xz)?',
-            mainfile_contents_re=(
-                r'^\s*<\?xml version="1\.0" encoding="ISO-8859-1"\?>\s*'
-                r'?\s*<modeling>'
-                r'?\s*<generator>'
-                r'?\s*<i name="program" type="string">\s*vasp\s*</i>'
-                r'?|^\svasp[\.\d]+\s*\w+\s*\(build'),
-            supported_compressions=['gz', 'bz2', 'xz'], mainfile_alternative=True)
-
-        self.metainfo_mapping = {
-            'e_fr_energy': 'energy_free', 'e_wo_entrp': 'energy_total',
-            'e_0_energy': 'energy_total_T0', 'hartreedc': 'energy_hartree_error',
-            'XCdc': 'energy_XC', 'forces': 'atom_forces', 'stress': 'stress_tensor',
-            'energy_total': 'energy_free', 'energy_T0': 'energy_total_T0',
-            'energy_entropy0': 'energy_total', 'DENC': 'energy_hartree_error',
-            'EXHF': 'energy_X', 'EBANDS': 'energy_sum_eigenvalues'}
-
-        self.xc_functional_mapping = {
-            '91': ['GGA_X_PW91', 'GGA_C_PW91'], 'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
-            'RP': ['GGA_X_RPBE', 'GGA_C_PBE'], 'PS': ['GGA_C_PBE_SOL', 'GGA_X_PBE_SOL'],
-            'MK': ['GGA_X_OPTB86_VDW'], '--': ['GGA_X_PBE', 'GGA_C_PBE']}
-
-        self._metainfo_env = m_env
-        self.parser = VASPParserInterface()
-
     def parse_incarsout(self):
         sec_method = self.archive.section_run[-1].section_method[-1]
 
         unknown_incars = dict()
-        for key, val in self.parser.get_incar_out().items():
+        for key, val in self.get_incar_out().items():
             key = 'x_vasp_incarOut_%s' % key
             if hasattr(Method, key):
                 try:
@@ -731,11 +716,11 @@ class VASPParser(FairdiParser):
 
         sec_method.x_vasp_unknown_incars = unknown_incars
 
-        prec = 1.3 if 'acc' in self.parser.incar.get('PREC', '') else 1.0
+        prec = 1.3 if 'acc' in self.incar.get('PREC', '') else 1.0
         sec_basis_set_cell_dependent = self.archive.section_run[-1].m_create(
             BasisSetCellDependent)
         sec_basis_set_cell_dependent.basis_set_planewave_cutoff = pint.Quantity(
-            self.parser.incar.get('ENMAX', 0.0) * prec, 'eV')
+            self.incar.get('ENMAX', 0.0) * prec, 'eV')
 
         sec_method_basis_set = sec_method.m_create(MethodBasisSet)
         sec_method_basis_set.mapping_section_method_basis_set_cell_associated = sec_basis_set_cell_dependent
@@ -744,18 +729,18 @@ class VASPParser(FairdiParser):
         sec_method = self.archive.section_run[-1].m_create(Method)
 
         # input incar
-        for key, val in self.parser.get_incar().items():
+        for key, val in self.get_incar().items():
             key = 'x_vasp_incar_%s' % key
             try:
                 setattr(sec_method, key, val)
             except Exception:
                 self.logger.warn('Error setting metainfo', data=dict(key=key))
 
-        sec_method.electronic_structure_method = 'DFT+U' if self.parser.incar.get(
+        sec_method.electronic_structure_method = 'DFT+U' if self.incar.get(
             'LDAU', False) else 'DFT'
 
         # kpoints
-        for key, val in self.parser.kpoints_info.items():
+        for key, val in self.kpoints_info.items():
             if val is not None:
                 try:
                     setattr(sec_method, key, val)
@@ -763,7 +748,7 @@ class VASPParser(FairdiParser):
                     self.logger.warn('Error setting metainfo', data=dict(key=key))
 
         # atom properties
-        atomtypes = self.parser.atom_info.get('atomtypes', {})
+        atomtypes = self.atom_info.get('atomtypes', {})
         element = atomtypes.get('element', [])
         atom_counts = {e: 0 for e in element}
         for i in range(len(element)):
@@ -786,7 +771,7 @@ class VASPParser(FairdiParser):
 
         self.parse_incarsout()
 
-        gga = self.parser.incar.get('GGA', None)
+        gga = self.incar.get('GGA', None)
         if gga is not None:
             xc_functionals = self.xc_functional_mapping.get(gga, [])
             for xc_functional in xc_functionals:
@@ -799,14 +784,14 @@ class VASPParser(FairdiParser):
         def parse_system(n_calc):
             sec_system = sec_run.m_create(System)
 
-            structure = self.parser.get_structure(n_calc)
+            structure = self.get_structure(n_calc)
             cell = structure.get('cell', None)
             if cell is not None:
                 sec_system.simulation_cell = cell
                 sec_system.lattice_vectors = cell
 
             sec_system.configuration_periodic_dimensions = [True] * 3
-            sec_system.atom_labels = self.parser.atom_info.get('atoms', {}).get('element', [])
+            sec_system.atom_labels = self.atom_info.get('atoms', {}).get('element', [])
 
             positions = structure.get('positions', None)
             if positions is not None:
@@ -831,7 +816,7 @@ class VASPParser(FairdiParser):
                 section = sec_run.section_single_configuration_calculation[-1].m_create(ScfIteration)
                 ext = '_scf_iteration'
 
-            energies = self.parser.get_energies(n_calc, n_scf)
+            energies = self.get_energies(n_calc, n_scf)
             for key, val in energies.items():
                 if val is None:
                     continue
@@ -847,7 +832,7 @@ class VASPParser(FairdiParser):
             return section
 
         def parse_eigenvalues(n_calc):
-            eigenvalues = self.parser.get_eigenvalues(n_calc)
+            eigenvalues = self.get_eigenvalues(n_calc)
             if eigenvalues is None:
                 return
 
@@ -864,17 +849,17 @@ class VASPParser(FairdiParser):
                 occs[i] < 0.5)]) for i in range(len(eigs))]
             sec_scc.energy_reference_highest_occupied = pint.Quantity(valence_max, 'eV')
             sec_scc.energy_reference_lowest_unoccupied = pint.Quantity(conduction_min, 'eV')
-            if self.parser.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
+            if self.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
                 # I removed normalization since it imho it should be done by normalizer
                 sec_k_band = sec_scc.m_create(KBand)
-                divisions = int(self.parser.kpoints_info.get('divisions', None))
-                kpoints = self.parser.kpoints_info.get('k_mesh_points', [])
+                divisions = int(self.kpoints_info.get('divisions', None))
+                kpoints = self.kpoints_info.get('k_mesh_points', [])
                 n_segments = len(kpoints) // divisions
                 kpoints = np.reshape(kpoints, (n_segments, divisions, 3))
                 eigs = np.reshape(eigs, (
-                    self.parser.ispin, n_segments, divisions, self.parser.n_bands))
+                    self.ispin, n_segments, divisions, self.n_bands))
                 occs = np.reshape(occs, (
-                    self.parser.ispin, n_segments, divisions, self.parser.n_bands))
+                    self.ispin, n_segments, divisions, self.n_bands))
                 eigs = np.transpose(eigs, axes=(1, 0, 2, 3))
                 occs = np.transpose(occs, axes=(1, 0, 2, 3))
                 for n in range(n_segments):
@@ -889,7 +874,7 @@ class VASPParser(FairdiParser):
                 sec_eigenvalues.eigenvalues_occupation = occs
 
         def parse_dos(n_calc):
-            energies, values, integrated, e_fermi = self.parser.get_total_dos(n_calc)
+            energies, values, integrated, e_fermi = self.get_total_dos(n_calc)
 
             # total dos
             if values is not None:
@@ -900,7 +885,7 @@ class VASPParser(FairdiParser):
                 sec_dos.dos_values = pint.Quantity(values, '1/eV').to('1/joule').magnitude
                 sec_dos.dos_integrated_values = integrated
 
-                sec_dos.energy_reference_fermi = pint.Quantity([e_fermi] * self.parser.ispin, 'eV')
+                sec_dos.energy_reference_fermi = pint.Quantity([e_fermi] * self.ispin, 'eV')
 
             # partial dos
             # TODO: I do not know how the f-orbitals are arranged
@@ -910,20 +895,20 @@ class VASPParser(FairdiParser):
                 'dyz': [2, 4], 'dz2': [2, 5], 'f': [3, -1], 'f-3': [3, 0], 'f-2': [3, 1],
                 'f-1': [3, 2], 'f0': [3, 3], 'f1': [3, 4], 'f2': [3, 5], 'f3': [3, 6]}
 
-            dos, fields = self.parser.get_partial_dos(n_calc)
+            dos, fields = self.get_partial_dos(n_calc)
             if dos is not None:
                 sec_dos.dos_values_lm = pint.Quantity(dos, '1/eV').to('1/joule').magnitude
                 sec_dos.dos_lm = [lm_converter.get(field, [-1, -1]) for field in fields]
                 sec_dos.dos_m_kind = 'polynomial'
 
-        for n in range(self.parser.n_calculations):
+        for n in range(self.n_calculations):
             # energies
             sec_scc = parse_energy(n, None)
-            for n_scf in range(self.parser.get_n_scf(n)):
+            for n_scf in range(self.get_n_scf(n)):
                 parse_energy(n, n_scf)
 
             # forces and stress
-            forces, stress = self.parser.get_forces_stress(n)
+            forces, stress = self.get_forces_stress(n)
             if forces is not None:
                 sec_scc.atom_forces = pint.Quantity(forces, 'eV/angstrom')
             if stress is not None:
@@ -941,33 +926,30 @@ class VASPParser(FairdiParser):
             # dos
             parse_dos(n)
 
-    def _init_parsers(self):
-        self.parser.init_parser(self.filepath, self.logger)
-
     def parse(self, filepath, archive, logger):
         self.filepath = filepath
         self.archive = archive
-        self.logger = logging if logger is None else logger
-        self._init_parsers()
+        self.logger = logging.getLogger(__name__) if logger is None else logger
+        self.init_parser(filepath, logger)
 
         sec_run = self.archive.m_create(Run)
-        program_name = self.parser.header.get('program', '')
+        program_name = self.header.get('program', '')
         if program_name.strip().upper() != 'VASP':
             self.logger.error('invalid program name', data=dict(program_name=program_name))
             return
         sec_run.program_name = 'VASP'
 
-        version = ' '.join([self.parser.header.get(key, '') for key in [
+        version = ' '.join([self.header.get(key, '') for key in [
             'version', 'subversion', 'platform']]).strip()
         if version:
             sec_run.program_version = version
 
         sec_run.program_basis_set_type = 'plane waves'
 
-        date = self.parser.header.get('date')
+        date = self.header.get('date')
         if date is not None:
             date = datetime.strptime(date.strip(), '%Y %m %d').date()
-            time = self.parser.header.get('time', '0:0:0')
+            time = self.header.get('time', '0:0:0')
             time = datetime.strptime(time.strip(), '%H:%M:%S').timetz()
             dtime = datetime.combine(date, time) - datetime.utcfromtimestamp(0)
             sec_run.program_compilation_datetime = dtime.total_seconds()
@@ -975,3 +957,31 @@ class VASPParser(FairdiParser):
         self.parse_method()
 
         self.parse_configurations()
+
+
+class VASPParser(FairdiParser):
+    def __init__(self):
+        super().__init__(
+            name='parsers/vasp', code_name='VASP', code_homepage='https://www.vasp.at/',
+            mainfile_mime_re=r'(application/.*)|(text/.*)',
+            mainfile_name_re=r'xml(\.gz|\.bz|\.xz)?',
+            mainfile_contents_re=(
+                r'^\s*<\?xml version="1\.0" encoding="ISO-8859-1"\?>\s*'
+                r'?\s*<modeling>'
+                r'?\s*<generator>'
+                r'?\s*<i name="program" type="string">\s*vasp\s*</i>'
+                r'?|^\svasp[\.\d]+\s*\w+\s*\(build'),
+            supported_compressions=['gz', 'bz2', 'xz'], mainfile_alternative=True)
+
+        self._metainfo_env = m_env
+        self.parser = None
+
+    def parse(self, filepath, archive, logger):
+        parser = VASPParserInterface()
+
+        if self.parser is not None:
+            parser.reuse_parser(self.parser)
+        else:
+            self.parser = parser
+
+        parser.parse(filepath, archive, logger)
