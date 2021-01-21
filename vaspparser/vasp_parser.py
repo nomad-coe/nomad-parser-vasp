@@ -661,7 +661,7 @@ class VASPParserInterface:
             else:
                 fields = [None] * n_lm
                 self.outcar_parser.logger.warn(
-                    'Cannot determine lm fields for n_lm=%d' % n_lm)
+                    'Cannot determine lm fields for n_lm', data=dict(n_lm=n_lm))
 
         elif self.parser == 'vasprun':
             root = 'calculation[%d]/dos' % (n_calc + 1)
@@ -723,7 +723,7 @@ class VASPParser(FairdiParser):
                 except Exception as e:
                     self.logger.warn(e)
             else:
-                self.logger.warn('Unknown incar parameter %s' % key)
+                self.logger.warn('Unknown incar parameter', data=dict(key=key))
                 # not sure why it gives out an error when np.array
                 if isinstance(val, np.ndarray):
                     val = list(val)
@@ -749,7 +749,7 @@ class VASPParser(FairdiParser):
             try:
                 setattr(sec_method, key, val)
             except Exception:
-                self.logger.warn('Error setting metainfo %s' % key)
+                self.logger.warn('Error setting metainfo', data=dict(key=key))
 
         sec_method.electronic_structure_method = 'DFT+U' if self.parser.incar.get(
             'LDAU', False) else 'DFT'
@@ -760,7 +760,7 @@ class VASPParser(FairdiParser):
                 try:
                     setattr(sec_method, key, val)
                 except Exception:
-                    self.logger.warn('Error setting metainfo %s' % key)
+                    self.logger.warn('Error setting metainfo', data=dict(key=key))
 
         # atom properties
         atomtypes = self.parser.atom_info.get('atomtypes', {})
@@ -842,7 +842,7 @@ class VASPParser(FairdiParser):
                 try:
                     setattr(section, '%s%s' % (metainfo_key, ext), val)
                 except Exception:
-                    self.logger.warn('Error setting metainfo %s' % key)
+                    self.logger.warn('Error setting metainfo', data=dict(key=key))
 
             return section
 
@@ -953,7 +953,7 @@ class VASPParser(FairdiParser):
         sec_run = self.archive.m_create(Run)
         program_name = self.parser.header.get('program', '')
         if program_name.strip().upper() != 'VASP':
-            self.logger.error('invalid program name: %s' % program_name)
+            self.logger.error('invalid program name', data=dict(program_name=program_name))
             return
         sec_run.program_name = 'VASP'
 
