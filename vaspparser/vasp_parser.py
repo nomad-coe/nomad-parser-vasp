@@ -537,8 +537,11 @@ class VASPParserInterface:
 
             if eigenvalues is None:
                 return
-            eigenvalues = np.reshape(eigenvalues, (self.ispin, n_kpts, self.n_bands, 3))
-            eigenvalues = np.transpose(eigenvalues)[1:].T
+            n_eigs = len(eigenvalues) // (self.ispin * n_kpts)
+            eigenvalues = np.reshape(eigenvalues, (n_eigs, self.ispin, n_kpts, self.n_bands, 3))
+            # eigenvalues can also be printed every scf iteration but we only save the
+            # last one, which corresponds to the calculation
+            eigenvalues = np.transpose(eigenvalues)[1:].T[-1]
 
         elif self.parser == 'vasprun':
             root = 'calculation[%d]/eigenvalues/array' % (n_calc + 1)
