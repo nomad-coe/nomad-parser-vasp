@@ -169,7 +169,7 @@ class VASPParser(FairdiParser):
         super().__init__(
             name='parsers/vasp', code_name='VASP', code_homepage='https://www.vasp.at/',
             mainfile_mime_re=r'(application/.*)|(text/.*)',
-            mainfile_name_re=r'xml(\.gz|\.bz|\.xz)?',
+            mainfile_name_re=r'.*[^/]*xml[^/]*',  # only the alternative mainfile name should match
             mainfile_contents_re=(
                 r'^\s*<\?xml version="1\.0" encoding="ISO-8859-1"\?>\s*'
                 r'?\s*<modeling>'
