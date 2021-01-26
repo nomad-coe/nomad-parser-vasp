@@ -164,8 +164,21 @@ class OutcarParser(TextParser):
             'nbands', r'NBANDS\s*=\s*(\d+)', dtype=int, repeats=False))
 
 
-class VASPParserInterface:
+class VASPParser(FairdiParser):
     def __init__(self):
+        super().__init__(
+            name='parsers/vasp', code_name='VASP', code_homepage='https://www.vasp.at/',
+            mainfile_mime_re=r'(application/.*)|(text/.*)',
+            mainfile_name_re=r'xml(\.gz|\.bz|\.xz)?',
+            mainfile_contents_re=(
+                r'^\s*<\?xml version="1\.0" encoding="ISO-8859-1"\?>\s*'
+                r'?\s*<modeling>'
+                r'?\s*<generator>'
+                r'?\s*<i name="program" type="string">\s*vasp\s*</i>'
+                r'?|^\svasp[\.\d]+\s*\w+\s*\(build'),
+            supported_compressions=['gz', 'bz2', 'xz'], mainfile_alternative=True)
+
+        self._metainfo_env = m_env
         self.vasprun_parser = XMLParser()
         self.outcar_parser = OutcarParser()
         self.parser = None
@@ -957,31 +970,3 @@ class VASPParserInterface:
         self.parse_method()
 
         self.parse_configurations()
-
-
-class VASPParser(FairdiParser):
-    def __init__(self):
-        super().__init__(
-            name='parsers/vasp', code_name='VASP', code_homepage='https://www.vasp.at/',
-            mainfile_mime_re=r'(application/.*)|(text/.*)',
-            mainfile_name_re=r'xml(\.gz|\.bz|\.xz)?',
-            mainfile_contents_re=(
-                r'^\s*<\?xml version="1\.0" encoding="ISO-8859-1"\?>\s*'
-                r'?\s*<modeling>'
-                r'?\s*<generator>'
-                r'?\s*<i name="program" type="string">\s*vasp\s*</i>'
-                r'?|^\svasp[\.\d]+\s*\w+\s*\(build'),
-            supported_compressions=['gz', 'bz2', 'xz'], mainfile_alternative=True)
-
-        self._metainfo_env = m_env
-        self.parser = None
-
-    def parse(self, filepath, archive, logger):
-        parser = VASPParserInterface()
-
-        if self.parser is not None:
-            parser.reuse_parser(self.parser)
-        else:
-            self.parser = parser
-
-        parser.parse(filepath, archive, logger)
