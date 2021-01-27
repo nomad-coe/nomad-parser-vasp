@@ -2,7 +2,7 @@ import numpy as np            # pylint: disable=unused-import
 import typing                 # pylint: disable=unused-import
 from nomad.metainfo import (  # pylint: disable=unused-import
     MSection, MCategory, Category, Package, Quantity, Section, SubSection, SectionProxy,
-    Reference
+    Reference, JSON
 )
 from nomad.metainfo.legacy import LegacyDefinition
 
@@ -42,8 +42,24 @@ class section_method(public.section_method):
 
     m_def = Section(validate=False, extends_base_section=True, a_legacy=LegacyDefinition(name='section_method'))
 
+    x_vasp_incar_in = Quantity(
+        type=JSON,
+        shape=[],
+        description='''
+        contains all the user-input INCAR parameters
+        ''',
+        a_legacy=LegacyDefinition(name='x_vasp_incar_in'))
+
+    x_vasp_incar_out = Quantity(
+        type=JSON,
+        shape=[],
+        description='''
+        contains the actual INCAR parameters used by VASP at runtime
+        ''',
+        a_legacy=LegacyDefinition(name='x_vasp_incar_out'))
+
     x_vasp_unknown_incars = Quantity(
-        type=typing.Any,
+        type=JSON,
         shape=[],
         description='''
         INCAR variables uknown wrt to Vasp Wiki

@@ -712,22 +712,16 @@ class VASPParser(FairdiParser):
     def parse_incarsout(self):
         sec_method = self.archive.section_run[-1].section_method[-1]
 
-        unknown_incars = dict()
-        for key, val in self.get_incar_out().items():
-            key = 'x_vasp_incarOut_%s' % key
-            if hasattr(Method, key):
-                try:
-                    setattr(sec_method, key, val)
-                except Exception as e:
-                    self.logger.warn(e)
-            else:
-                self.logger.warn('Unknown incar parameter', data=dict(key=key))
-                # not sure why it gives out an error when np.array
-                if isinstance(val, np.ndarray):
-                    val = list(val)
-                unknown_incars[key] = val
-
-        sec_method.x_vasp_unknown_incars = unknown_incars
+        incar_parameters = self.get_incar_out()
+        for key, val in incar_parameters.items():
+            if isinstance(val, np.ndarray):
+                val = list(val)
+            incar_parameters[key] = val
+        try:
+            sec_method.x_vasp_incar_out = incar_parameters
+        except Exception:
+            self.logger.warn('Error setting metainfo defintion x_vasp_incar_out', data=dict(
+                incar=incar_parameters))
 
         prec = 1.3 if 'acc' in self.incar.get('PREC', '') else 1.0
         sec_basis_set_cell_dependent = self.archive.section_run[-1].m_create(
@@ -742,12 +736,16 @@ class VASPParser(FairdiParser):
         sec_method = self.archive.section_run[-1].m_create(Method)
 
         # input incar
-        for key, val in self.get_incar().items():
-            key = 'x_vasp_incar_%s' % key
-            try:
-                setattr(sec_method, key, val)
-            except Exception:
-                self.logger.warn('Error setting metainfo', data=dict(key=key))
+        incar_parameters = self.get_incar()
+        for key, val in incar_parameters.items():
+            if isinstance(val, np.ndarray):
+                val = list(val)
+            incar_parameters[key] = val
+        try:
+            sec_method.x_vasp_incar_in = incar_parameters
+        except Exception:
+            self.logger.warn('Error setting metainfo defintion x_vasp_incar_in', data=dict(
+                incar=incar_parameters))
 
         sec_method.electronic_structure_method = 'DFT+U' if self.incar.get(
             'LDAU', False) else 'DFT'
