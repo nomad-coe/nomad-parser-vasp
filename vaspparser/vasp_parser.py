@@ -164,6 +164,616 @@ class OutcarParser(TextParser):
             'nbands', r'NBANDS\s*=\s*(\d+)', dtype=int, repeats=False))
 
 
+class Parser:
+    def __init__(self):
+        self.parser = None
+        self._header = None
+        self._incar = None
+        self._kpoints_info = None
+        self._atom_info = None
+        self._calculations = None
+        self._n_bands = None
+        self._n_dos = None
+        self.metainfo_mapping = {
+            'e_fr_energy': 'energy_free', 'e_wo_entrp': 'energy_total',
+            'e_0_energy': 'energy_total_T0', 'hartreedc': 'energy_hartree_error',
+            'XCdc': 'energy_XC', 'forces': 'atom_forces', 'stress': 'stress_tensor',
+            'energy_total': 'energy_free', 'energy_T0': 'energy_total_T0',
+            'energy_entropy0': 'energy_total', 'DENC': 'energy_hartree_error',
+            'EXHF': 'energy_X', 'EBANDS': 'energy_sum_eigenvalues'}
+
+        self.xc_functional_mapping = {
+            '91': ['GGA_X_PW91', 'GGA_C_PW91'], 'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
+            'RP': ['GGA_X_RPBE', 'GGA_C_PBE'], 'PS': ['GGA_C_PBE_SOL', 'GGA_X_PBE_SOL'],
+            'MK': ['GGA_X_OPTB86_VDW'], '--': ['GGA_X_PBE', 'GGA_C_PBE']}
+
+    def init_parser(self, filepath, logger):
+        self.parser.mainfile = filepath
+        self.parser.logger = logger
+        self._incar = None
+        self._kpoints_info = None
+        self._atom_info = None
+        self._header = None
+        self._calculations = None
+        self._n_bands = None
+        self._n_dos = None
+
+    def reuse_parser(self, parser):
+        self.parser.quantities = parser.parser.quantities
+
+    def _fix_incar(self, incar):
+        # fix for LORBIT, list is read
+        lorbit = incar.get('LORBIT', None)
+        if isinstance(lorbit, list):
+            incar['LORBIT'] = lorbit[0]
+
+    def get_incar(self):
+        pass
+
+    def get_incar_out(self):
+        pass
+
+    # why make a distinction between incar_in and incar_out?
+    @property
+    def incar(self):
+        if self._incar is None:
+            self._incar = dict(incar=None, incar_out=None)
+        if self._incar['incar'] is None:
+            self.get_incar()
+        if self._incar['incar_out'] is None:
+            self.get_incar_out()
+
+        incar = dict()
+        incar.update(self._incar['incar'])
+        incar.update(self._incar['incar_out'])
+
+        return incar
+
+    @property
+    def ispin(self):
+        return self.incar.get('ISPIN', 1)
+
+    @property
+    def ibrion(self):
+        val = self.incar.get('IBRION,', None)
+        if val is None:
+            val = -1 if self.incar.get('NSW', 0) in [0, 1] else 0
+        return val
+
+
+class VASPXml(Parser):
+    def __init__(self):
+        super().__init__()
+        self.parser = XMLParser()
+
+    def _get_key_values(self, path, root=None):
+        if self.parser.root is None:
+            return dict()
+
+        dtypes = {'string': str, 'int': int, 'logical': bool, '': float}
+
+        def convert(val, dtype):
+            if isinstance(val, list):
+                return [convert(v, dtype) for v in val]
+            else:
+                return dtype(val)
+
+        root = self.parser if root is None else root
+        elements = root.root.findall(os.path.join('./', path))
+
+        names, values = [], []
+        for element in elements:
+            name = element.attrib.get('name', None)
+            if name is None:
+                continue
+            dtype = dtypes.get(element.attrib.get('type', ''), str)
+
+            value = element.text if element.text else ''
+            value = value.split() if dtype != str else value.strip()
+            value = value[0] if len(value) == 1 else value
+            array = isinstance(value, list) or path.endswith('/v/')
+
+            if dtype == bool:
+                value = [v == 'T' for v in value] if array else value == 'T'
+            if dtype == float:
+                # prevent nan printouts
+                if array:
+                    value = ['nan' if '*' in v else v for v in value]
+                else:
+                    value = 'nan' if '*' in value else value
+            # using numpy array does not work
+            value = convert(value, dtype)
+            names.append(name)
+            values.append(value)
+
+        return dict(zip(names, values))
+
+    @property
+    def header(self):
+        if self._header is None:
+            self._header = self._get_key_values('generator/i')
+            for key, val in self._header.items():
+                if not isinstance(val, str):
+                    self._header[key] = ' '.join(val)
+        return self._header
+
+    def get_incar(self):
+        if self._incar is not None and self._incar.get('incar', None) is not None:
+            return self._incar.get('incar')
+
+        if self._incar is None:
+            self._incar = dict(incar=None, incar_out=None)
+        incar = self._get_key_values('incar/i')
+        self._fix_incar(incar)
+        self._incar['incar'] = incar
+        return incar
+
+    def get_incar_out(self):
+        if self._incar is not None and self._incar.get('incar_out', None) is not None:
+            return self._incar.get('incar_out')
+
+        incar = dict()
+        if self._incar is None:
+            self._incar = dict(incar=None, incar_out=None)
+        for tag in ['i', 'v']:
+            incar.update(self._get_key_values('parameters//%s' % tag))
+
+        self._incar['incar_out'] = incar
+        self._fix_incar(incar)
+        return incar
+
+    @property
+    def calculations(self):
+        if self._calculations is None:
+            self._calculations = self.parser.root.findall('calculation')
+            self._calculation_parsers = [XMLParser() for _ in self._calculations]
+            for n in range(len(self._calculation_parsers)):
+                self._calculation_parsers[n]._file_handler = self._calculations[n]
+        return self._calculations
+
+    @property
+    def n_calculations(self):
+        if isinstance(self.calculations, dict):
+            n_calcs = 1
+        elif isinstance(self.calculations, list):
+            n_calcs = len(self.calculations)
+        else:
+            n_calcs = 0
+
+        return n_calcs
+
+    @property
+    def kpoints_info(self):
+        if self._kpoints_info is None:
+            self._kpoints_info = dict()
+            self._kpoints_info['x_vasp_k_points_generation_method'] = self.parser.get(
+                'kpoints/generation/param')
+            self._kpoints_info['k_mesh_points'] = self.parser.get(
+                'kpoints/varray/[@name="kpointlist"]/v')
+            self._kpoints_info['k_mesh_weights'] = self.parser.get(
+                'kpoints/varray/[@name="weights"]/v')
+            self._kpoints_info['x_vasp_tetrahedrons_list'] = self.parser.get(
+                'kpoints/varray/[@name="tetrahedronlist"]/v')
+            self._kpoints_info['divisions'] = self.parser.get(
+                'kpoints/generation/i/[@name="divisions"]')
+            self._kpoints_info['points'] = self.parser.get('kpoints/generation/v')
+            volumeweight = self.parser.get('kpoints/i/[@name="volumeweight"]')
+            if volumeweight is not None:
+                volumeweight = pint.Quantity(volumeweight, 'angstrom ** 3').to('m**3')
+                # TODO set propert unit in metainfo
+                self._kpoints_info['x_vasp_tetrahedron_volume'] = volumeweight.magnitude
+        return self._kpoints_info
+
+    @property
+    def n_bands(self):
+        if self._n_bands is None:
+            for n in range(self.n_calculations):
+                val = self.parser.get(
+                    'calculation[%d]/eigenvalues/array/set[1]/set[1]/set[1]/r' % (n + 1))
+                if val is not None:
+                    self._n_bands = len(val)
+                    break
+            if self._n_bands is None:
+                self._n_bands = self.incar.get('NBANDS', 0)
+        return self._n_bands
+
+    @property
+    def n_dos(self):
+        if self._n_dos is None:
+            for n in range(self.n_calculations):
+                val = self.parser.get(
+                    'calculation[%d]/dos/total/array/set[1]/set[1]/r' % (n + 1))
+                if val is not None:
+                    self._n_dos = len(val)
+                    break
+            if self._n_dos is None:
+                self._n_dos = self._incar.get('NEDOS', 0)
+        return self._n_dos
+
+    @property
+    def atom_info(self):
+        if self._atom_info is None:
+            self._atom_info = {}
+            self._atom_info['n_atoms'] = self.parser.get('atominfo/atoms')
+            self._atom_info['n_types'] = self.parser.get('atominfo/types')
+
+            array_keys = [
+                e.get('name', None) for e in self.parser.get('atominfo/array/')]
+            for key in array_keys:
+                array_info = {}
+                fields = self.parser.get('atominfo/array/[@name="%s"]/field' % key)
+                rcs = self.parser.get('atominfo/array/[@name="%s"]/set/rc/' % key, 1)
+                for n in range(max(len(rcs), 1)):
+                    val = self.parser.get(
+                        'atominfo/array/[@name="%s"]/set/rc[%d]/c' % (key, n + 1))
+                    for i in range(len(fields)):
+                        array_info.setdefault(fields[i], [])
+                        array_info[fields[i]].append(val[i])
+                self._atom_info[key] = array_info
+        return self._atom_info
+
+    def get_n_scf(self, n_calc):
+        return len(self._calculation_parsers[n_calc].get('scstep/'))
+
+    def get_structure(self, n_calc):
+        cell = self._calculation_parsers[n_calc].get('structure/crystal/varray[@name="basis"]/v')
+        positions = self._calculation_parsers[n_calc].get('structure/varray/[@name="positions"]/v')
+        selective = self._calculation_parsers[n_calc].get('structure/varray/[@name="selective"]/v')
+        nose = self._calculation_parsers[n_calc].get('structure/nose/v')
+
+        if positions is not None:
+            positions = pint.Quantity(np.dot(positions, cell), 'angstrom')
+        if cell is not None:
+            cell = pint.Quantity(cell, 'angstrom')
+
+        return dict(cell=cell, positions=positions, selective=selective, nose=nose)
+
+    def get_energies(self, n_calc, n_scf):
+        if n_scf is None:
+            return self._get_key_values('energy/i', self._calculation_parsers[n_calc])
+        else:
+            return self._get_key_values('scstep[%d]/energy/i' % (n_scf + 1), self._calculation_parsers[n_calc])
+
+    def get_forces_stress(self, n_calc):
+        forces = self._calculation_parsers[n_calc].get('varray/[@name="forces"]/v')
+        stress = self._calculation_parsers[n_calc].get('varray/[@name="stress"]/v')
+        return forces, stress
+
+    def get_eigenvalues(self, n_calc):
+        n_kpts = len(self.kpoints_info.get('k_mesh_points', []))
+        eigenvalues = self._calculation_parsers[n_calc].root.findall('eigenvalues/array/set//r')
+        if not eigenvalues:
+            return
+
+        eigenvalues = np.array([e.text.split() for e in eigenvalues], dtype=float)
+        eigenvalues = np.reshape(eigenvalues, (self.ispin, n_kpts, self.n_bands, 2))
+
+        return eigenvalues
+
+    def get_total_dos(self, n_calc):
+        dos_energies = dos_values = dos_integrated = e_fermi = None
+
+        dos = self._calculation_parsers[n_calc].root.findall('dos/total/array/set//r')
+        if not dos:
+            return dos_energies, dos_values, dos_integrated, e_fermi
+
+        dos = np.array([e.text.split() for e in dos], dtype=float)
+        dos = np.reshape(dos, (self.ispin, self.n_dos, 3))
+
+        dos = np.transpose(dos)
+        dos_energies = dos[0].T[0]
+        dos_values = dos[1].T
+        dos_integrated = dos[2].T
+
+        # unit of dos in vasprun is states/eV/cell
+        cell = self.get_structure(n_calc)['cell']
+        volume = np.abs(np.linalg.det(cell.to('m').magnitude))
+        dos_values *= volume
+
+        e_fermi = self._calculation_parsers[n_calc].get('dos/i/[@name="efermi"]', 0.0)
+
+        return dos_energies, dos_values, dos_integrated, e_fermi
+
+    def get_partial_dos(self, n_calc):
+        n_atoms = self.atom_info['n_atoms']
+        dos = self._calculation_parsers[n_calc].root.findall('dos/partial/array/set//r')
+        if not dos:
+            return None, None
+
+        # TODO use atomprojecteddos section
+        fields = self._calculation_parsers[n_calc].get('dos/partial/array/field')
+        dos = np.array([e.text.split() for e in dos], dtype=float)
+        dos = np.reshape(dos, (n_atoms, self.ispin, self.n_dos, len(fields)))
+
+        fields = [field for field in fields if field != 'energy']
+        dos = np.transpose(dos)[1:]
+        dos = np.transpose(dos, axes=(0, 2, 3, 1))
+
+        return dos, fields
+
+
+class VASPOutcar(Parser):
+    def __init__(self):
+        super().__init__()
+        self.parser = OutcarParser()
+
+    def _get_key_values(self, path):
+        if not os.path.isfile(path):
+            return dict()
+        with self.parser.open(path) as f:
+            text = f.read()
+            text = text.decode() if isinstance(text, bytes) else text
+            data = get_key_values(text)
+        return data
+
+    @property
+    def header(self):
+        if self._header is None:
+            self._header = self.parser.get('header', {})
+            self._header['program'] = 'vasp'
+            for key, val in self._header.items():
+                if not isinstance(val, str):
+                    self._header[key] = ' '.join(val)
+        return self._header
+
+    def get_incar(self):
+        if self._incar is not None and self._incar.get('incar', None) is not None:
+            return self._incar.get('incar')
+
+        incar = dict()
+        if self._incar is None:
+            self._incar = dict(incar=None, incar_out=None)
+
+        path = os.path.join(self.parser.maindir, 'INCAR%s' % os.path.basename(
+            self.parser.mainfile).strip('OUTCAR'))
+        path = path if os.path.isfile(path) else os.path.join(
+            self.parser.maindir, 'INCAR')
+        incar = self._get_key_values(path)
+        self._fix_incar(incar)
+        self._incar['incar'] = incar
+        return incar
+
+    def get_incar_out(self):
+        if self._incar is not None and self._incar.get('incar_out', None) is not None:
+            return self._incar.get('incar_out')
+
+        incar = dict()
+        if self._incar is None:
+            self._incar = dict(incar=None, incar_out=None)
+
+        incar = self.parser.get('parameters', {})
+        self._incar['incar_out'] = incar
+        self._fix_incar(incar)
+        return incar
+
+    @property
+    def calculations(self):
+        if self._calculations is None:
+            self._calculations = self.parser.get('calculation')
+        return self._calculations
+
+    @property
+    def n_calculations(self):
+        if isinstance(self.calculations, dict):
+            return 1
+        elif isinstance(self.calculations, list):
+            return len(self.calculations)
+        else:
+            return 0
+
+    @property
+    def kpoints_info(self):
+        if self._kpoints_info is None:
+            self._kpoints_info = dict()
+            kpts_occs = self.parser.get('kpoints')
+            if kpts_occs is not None:
+                kpts_occs = np.reshape(kpts_occs, (len(kpts_occs) // 4, 4)).T
+                self._kpoints_info['k_mesh_points'] = kpts_occs[0:3].T
+                self._kpoints_info['k_mesh_weights'] = kpts_occs[3].T
+
+        return self._kpoints_info
+
+    @property
+    def n_bands(self):
+        if self._n_bands is None:
+            for n in range(self.n_calculations):
+                val = self.parser.get('calculation', [{}] * (n + 1))[n].get(
+                    'eigenvalues', [None])[0]
+                if val is not None:
+                    self._n_bands = len(val) // 3
+                    break
+            if self._n_bands is None:
+                # check consistency with eigenvalues
+                self._n_bands = self.incar.get('NBANDS', 0)
+        return self._n_bands
+
+    @property
+    def n_dos(self):
+        if self._n_dos is None:
+            path = os.path.join(self.parser.maindir, 'DOSCAR%s' % os.path.basename(
+                self.parser.mainfile).strip('OUTCAR'))
+            path = path if os.path.isfile(path) else os.path.join(
+                self.parser.maindir, 'DOSCAR')
+            with open(path) as f:
+                for _ in range(6):
+                    line = f.readline()
+                self._n_dos = int(line.split()[2])
+            if self._n_dos is None:
+                self._n_dos = self._incar.get('NEDOS', 0)
+        return self._n_dos
+
+    @property
+    def atom_info(self):
+        if self._atom_info is None:
+            self._atom_info = {}
+
+            ions = self.parser.get('ions_per_type', [])
+            species = self.parser.get('species', [])
+            ions = [ions] if isinstance(ions, int) else ions
+            mass_valence = self.parser.get('mass_valence', [])
+            assert len(ions) == len(species)
+            self._atom_info['n_atoms'] = sum(ions)
+            self._atom_info['n_types'] = len(species)
+
+            element = []
+            atomtype = []
+            for n in range(len(ions)):
+                element.extend([str(species[n][1])] * ions[n])
+                atomtype.extend([(n + 1)] * ions[n])
+            self._atom_info['atoms'] = dict(element=element, atomtype=atomtype)
+
+            self._atom_info['atomtypes'] = dict(
+                atomspertype=ions, element=[s[0] for s in species],
+                mass=[m[0] for m in mass_valence], valence=[m[1] for m in mass_valence],
+                pseudopotential=[s[1] for s in species])
+
+        return self._atom_info
+
+    def get_n_scf(self, n_calc):
+        return len(self.parser.get(
+            'calculation', [{}] * (n_calc + 1))[n_calc].get('scf_iteration', []))
+
+    def get_structure(self, n_calc):
+        cell = self.parser.get(
+            'calculation', [{}] * (n_calc + 1))[n_calc].get('lattice_vectors', [None])[0]
+        positions = self.parser.get(
+            'calculation', [{}] * (n_calc + 1))[n_calc].get('positions_forces', [None])[0]
+        selective = None
+        nose = None
+
+        if positions is not None:
+            positions = pint.Quantity(np.dot(positions, cell), 'angstrom')
+        if cell is not None:
+            cell = pint.Quantity(cell, 'angstrom')
+
+        return dict(cell=cell, positions=positions, selective=selective, nose=nose)
+
+    def get_energies(self, n_calc, n_scf):
+        energies = dict()
+        if n_scf is None:
+            section = self.parser.get(
+                'calculation', [{}] * (n_calc + 1))[n_calc]
+        else:
+            section = self.parser.get('calculation', [{}] * (
+                n_calc + 1))[n_calc].get('scf_iteration', [{}] * (n_scf + 1))[n_scf]
+        for key in ['total_energy', 'energy_T0', 'energy_entropy0']:
+            energies[key] = section.get(key)
+
+        energies.update(section.get('energy_components', {}))
+        return energies
+
+    def get_forces_stress(self, n_calc):
+        forces = self.parser.get('calculation', [{}] * (n_calc + 1))[n_calc].get(
+            'positions_forces', [None, None])[1]
+        stress = self.parser.get('calculation', [{}] * (n_calc + 1))[n_calc].get(
+            'stress', None)
+
+        return forces, stress
+
+    def get_eigenvalues(self, n_calc):
+        n_kpts = len(self.kpoints_info.get('k_mesh_points', []))
+        eigenvalues = self.parser.get(
+            'calculation', [{}] * (n_calc + 1))[n_calc].get('eigenvalues')
+
+        if eigenvalues is None:
+            return
+        n_eigs = len(eigenvalues) // (self.ispin * n_kpts)
+        eigenvalues = np.reshape(eigenvalues, (n_eigs, self.ispin, n_kpts, self.n_bands, 3))
+        # eigenvalues can also be printed every scf iteration but we only save the
+        # last one, which corresponds to the calculation
+        eigenvalues = np.transpose(eigenvalues)[1:].T[-1]
+        return eigenvalues
+
+    def get_total_dos(self, n_calc):
+        dos_energies = dos_values = dos_integrated = e_fermi = None
+
+        if n_calc != (self.n_calculations - 1):
+            return dos_energies, dos_values, dos_integrated, e_fermi
+        path = os.path.join(self.parser.maindir, 'DOSCAR%s' % os.path.basename(
+            self.parser.mainfile).strip('OUTCAR'))
+        path = path if os.path.isfile(path) else os.path.join(
+            self.parser.maindir, 'DOSCAR')
+        if not os.path.isfile(path):
+            return dos_energies, dos_values, dos_integrated, e_fermi
+
+        dos = []
+        n_dos = 0
+        with self.parser.open(path) as f:
+            for i, line in enumerate(f):
+                if i < 5:
+                    continue
+                if i == 5:
+                    e_fermi = float(line.split()[1])
+                    n_dos = int(line.split()[2])
+                if i > 5:
+                    dos.append([float(v) for v in line.split()])
+                if i >= n_dos + 5:
+                    break
+        if not dos:
+            return dos_energies, dos_values, dos_integrated, e_fermi
+
+        # DOSCAR fomat (spin) energy dos_up dos_down integrated_up integrated_down
+        dos = np.transpose(dos)
+        dos_energies = dos[0]
+        dos_values = dos[1: 1 + self.ispin]
+        dos_integrated = dos[1 + self.ispin: 2 * self.ispin + 1]
+
+        return dos_energies, dos_values, dos_integrated, e_fermi
+
+    def get_partial_dos(self, n_calc):
+        n_atoms = self.atom_info['n_atoms']
+        dos = fields = None
+        if n_calc != (self.n_calculations - 1):
+            return dos, fields
+        path = os.path.join(self.parser.maindir, 'DOSCAR%s' % os.path.basename(
+            self.parser.mainfile).strip('OUTCAR'))
+        path = path if os.path.isfile(path) else os.path.join(
+            self.parser.maindir, 'DOSCAR')
+        if not os.path.isfile(path):
+            return dos, fields
+
+        dos = []
+        n_dos = 0
+        atom = 1
+        with self.parser.open(path) as f:
+            for i, line in enumerate(f):
+                if i == 0:
+                    if int(line.split()[2]) != 1:
+                        return None, None
+                elif i < 5:
+                    continue
+                elif i == 5:
+                    n_dos = int(line.split()[2])
+                if i == ((n_dos + 1) * atom) + 5:
+                    atom += 1
+                    continue
+                if i > (n_dos + 6):
+                    dos.append([float(v) for v in line.split()])
+                if i >= ((n_dos + 1) * (n_atoms + 1) + 5):
+                    break
+        if len(dos) == 0:
+            return None, None
+
+        dos = np.transpose(dos)[1:]
+        n_lm = len(dos) // self.ispin
+        dos = np.reshape(dos, (n_lm, self.ispin, n_atoms, n_dos))
+
+        if n_lm == 3:
+            fields = ['s', 'p', 'd']
+        elif n_lm == 9:
+            fields = ['s', 'py', 'pz', 'px', 'dxy', 'dyz', 'dz2', 'dxz', 'dx2']
+        elif n_lm == 16:
+            fields = [
+                's', 'py', 'pz', 'px', 'dxy', 'dyz', 'dz2', 'dxz', 'dx2', 'f-3',
+                'f-2', 'f-1', 'f0', 'f1', 'f2', 'f3']
+        else:
+            fields = [None] * n_lm
+            self.parser.logger.warn(
+                'Cannot determine lm fields for n_lm', data=dict(n_lm=n_lm))
+
+        return dos, fields
+
+
 class VASPParser(FairdiParser):
     def __init__(self):
         super().__init__(
@@ -179,540 +789,17 @@ class VASPParser(FairdiParser):
             supported_compressions=['gz', 'bz2', 'xz'], mainfile_alternative=True)
 
         self._metainfo_env = m_env
-        self.vasprun_parser = XMLParser()
-        self.outcar_parser = OutcarParser()
-        self.parser = None
-        self._incar = None
-        self._kpoints_info = None
-        self._atom_info = None
-        self._header = None
-
-        self.metainfo_mapping = {
-            'e_fr_energy': 'energy_free', 'e_wo_entrp': 'energy_total',
-            'e_0_energy': 'energy_total_T0', 'hartreedc': 'energy_hartree_error',
-            'XCdc': 'energy_XC', 'forces': 'atom_forces', 'stress': 'stress_tensor',
-            'energy_total': 'energy_free', 'energy_T0': 'energy_total_T0',
-            'energy_entropy0': 'energy_total', 'DENC': 'energy_hartree_error',
-            'EXHF': 'energy_X', 'EBANDS': 'energy_sum_eigenvalues'}
-
-        self.xc_functional_mapping = {
-            '91': ['GGA_X_PW91', 'GGA_C_PW91'], 'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
-            'RP': ['GGA_X_RPBE', 'GGA_C_PBE'], 'PS': ['GGA_C_PBE_SOL', 'GGA_X_PBE_SOL'],
-            'MK': ['GGA_X_OPTB86_VDW'], '--': ['GGA_X_PBE', 'GGA_C_PBE']}
-
-    def init_parser(self, mainfile, logger):
-        if 'OUTCAR' in mainfile:
-            self.parser = 'outcar'
-            self.outcar_parser.mainfile = mainfile
-            self.outcar_parser.logger = logger
-        else:
-            self.parser = 'vasprun'
-            self.vasprun_parser.mainfile = mainfile
-            self.vasprun_parser.logger = logger
-        self._incar = None
-        self._kpoints_info = None
-        self._atom_info = None
-        self._header = None
-
-    def reuse_parser(self, parser):
-        self.outcar_parser.quantities = parser.outcar_parser.quantities
-
-    def _get_key_values(self, path):
-        if self.parser == 'outcar':
-
-            if not os.path.isfile(path):
-                return dict()
-            with self.outcar_parser.open(path) as f:
-                text = f.read()
-                text = text.decode() if isinstance(text, bytes) else text
-                data = get_key_values(text)
-            return data
-
-        elif self.parser == 'vasprun':
-            if self.vasprun_parser.root is None:
-                return dict()
-
-            elements = self.vasprun_parser.root.findall(os.path.join('./', path))
-
-            dtypes = {'string': str, 'int': int, 'logical': bool, '': float}
-            names = [e.attrib.get('name', None) for e in elements]
-            types = [e.attrib.get('type', '') for e in elements]
-            values = [e.text if e.text else '' for e in elements]
-
-            def convert(val, dtype):
-                if isinstance(val, list):
-                    return [convert(v, dtype) for v in val]
-                else:
-                    return dtype(val)
-
-            for i in range(len(values)):
-                if names[i] is None:
-                    continue
-                dtype = dtypes.get(types[i], str)
-                values[i] = values[i].split() if dtype != str else values[i].strip()
-                values[i] = values[i][0] if len(values[i]) == 1 else values[i]
-                array = isinstance(values[i], list) or path.endswith('/v/')
-
-                if dtype == bool:
-                    values[i] = [v == 'T' for v in values[i]] if array else values[i] == 'T'
-                if dtype == float:
-                    # prevent nan printouts
-                    if array:
-                        values[i] = ['nan' if '*' in v else v for v in values[i]]
-                    else:
-                        values[i] = 'nan' if '*' in values[i] else values[i]
-                # using numpy array does not work
-                values[i] = convert(values[i], dtype)
-
-            return dict(zip(names, values))
-
-        return dict()
-
-    @property
-    def header(self):
-        if self._header is None:
-            self._header = dict()
-            if self.parser == 'outcar':
-                self._header = self.outcar_parser.get('header', {})
-                self._header['program'] = 'vasp'
-            elif self.parser == 'vasprun':
-                self._header = self._get_key_values('generator/i')
-            for key, val in self._header.items():
-                if not isinstance(val, str):
-                    self._header[key] = ' '.join(val)
-        return self._header
-
-    # why make a distinction between incar_in and incar_out?
-    @property
-    def incar(self):
-        if self._incar is None:
-            self._incar = dict(incar=None, incar_out=None)
-        if self._incar['incar'] is None:
-            self.get_incar()
-        if self._incar['incar_out'] is None:
-            self.get_incar_out()
-
-        incar = self._incar['incar']
-        incar.update(self._incar['incar_out'])
-
-        return incar
-
-    def _fix_incar(self, incar):
-        # fix for LORBIT, list is read
-        lorbit = incar.get('LORBIT', None)
-        if isinstance(lorbit, list):
-            incar['LORBIT'] = lorbit[0]
-
-    def get_incar(self):
-        if self._incar is not None and self._incar.get('incar', None) is not None:
-            return self._incar.get('incar')
-
-        incar = dict()
-        if self._incar is None:
-            self._incar = dict(incar=None, incar_out=None)
-        if self.parser == 'outcar':
-            path = os.path.join(self.outcar_parser.maindir, 'INCAR%s' % os.path.basename(
-                self.outcar_parser.mainfile).strip('OUTCAR'))
-            path = path if os.path.isfile(path) else os.path.join(
-                self.outcar_parser.maindir, 'INCAR')
-            incar = self._get_key_values(path)
-        elif self.parser == 'vasprun':
-            incar = self._get_key_values('incar/i')
-        self._fix_incar(incar)
-        self._incar['incar'] = incar
-        return incar
-
-    def get_incar_out(self):
-        if self._incar is not None and self._incar.get('incar_out', None) is not None:
-            return self._incar.get('incar_out')
-
-        incar = dict()
-        if self._incar is None:
-            self._incar = dict(incar=None, incar_out=None)
-        if self.parser == 'outcar':
-            incar = self.outcar_parser.get('parameters', {})
-        elif self.parser == 'vasprun':
-            for tag in ['i', 'v']:
-                incar.update(self._get_key_values('parameters//%s' % tag))
-
-        self._incar['incar_out'] = incar
-        self._fix_incar(incar)
-        return incar
-
-    @property
-    def ispin(self):
-        return self.incar.get('ISPIN', 1)
-
-    @property
-    def ibrion(self):
-        val = self.incar.get('IBRION,', None)
-        if val is None:
-            val = -1 if self.incar.get('NSW', 0) in [0, 1] else 0
-        return val
-
-    @property
-    def n_calculations(self):
-        calculations = []
-        if self.parser == 'outcar':
-            calculations = self.outcar_parser.get('calculation')
-        elif self.parser == 'vasprun':
-            calculations = self.vasprun_parser.get('calculation/')
-
-        if isinstance(calculations, dict):
-            return 1
-        elif isinstance(calculations, list):
-            return len(calculations)
-        else:
-            return 0
-
-    @property
-    def kpoints_info(self):
-        if self._kpoints_info is None:
-            self._kpoints_info = dict()
-            if self.parser == 'outcar':
-                kpts_occs = self.outcar_parser.get('kpoints')
-                if kpts_occs is not None:
-                    kpts_occs = np.reshape(kpts_occs, (len(kpts_occs) // 4, 4)).T
-                    self._kpoints_info['k_mesh_points'] = kpts_occs[0:3].T
-                    self._kpoints_info['k_mesh_weights'] = kpts_occs[3].T
-
-            elif self.parser == 'vasprun':
-                self._kpoints_info['x_vasp_k_points_generation_method'] = self.vasprun_parser.get(
-                    'kpoints/generation/param')
-                self._kpoints_info['k_mesh_points'] = self.vasprun_parser.get(
-                    'kpoints/varray/[@name="kpointlist"]/v')
-                self._kpoints_info['k_mesh_weights'] = self.vasprun_parser.get(
-                    'kpoints/varray/[@name="weights"]/v')
-                self._kpoints_info['x_vasp_tetrahedrons_list'] = self.vasprun_parser.get(
-                    'kpoints/varray/[@name="tetrahedronlist"]/v')
-                self._kpoints_info['divisions'] = self.vasprun_parser.get(
-                    'kpoints/generation/i/[@name="divisions"]')
-                self._kpoints_info['points'] = self.vasprun_parser.get('kpoints/generation/v')
-                volumeweight = self.vasprun_parser.get('kpoints/i/[@name="volumeweight"]')
-                if volumeweight is not None:
-                    volumeweight = pint.Quantity(volumeweight, 'angstrom ** 3').to('m**3')
-                    # TODO set propert unit in metainfo
-                    self._kpoints_info['x_vasp_tetrahedron_volume'] = volumeweight.magnitude
-
-        return self._kpoints_info
-
-    @property
-    def n_bands(self):
-        for n in range(self.n_calculations):
-            if self.parser == 'outcar':
-                val = self.outcar_parser.get('calculation', [{}] * (n + 1))[n].get(
-                    'eigenvalues', [None])[0]
-                if val is not None:
-                    return len(val) // 3
-            elif self.parser == 'vasprun':
-                val = self.vasprun_parser.get(
-                    'calculation[%d]/eigenvalues/array/set[1]/set[1]/set[1]/r' % (n + 1))
-                if val is not None:
-                    return len(val)
-        # check consistency with eigenvalues
-        return self.incar.get('NBANDS', 0)
-
-    @property
-    def n_dos(self):
-        if self.parser == 'outcar':
-            path = os.path.join(self.outcar_parser.maindir, 'DOSCAR%s' % os.path.basename(
-                self.outcar_parser.mainfile).strip('OUTCAR'))
-            path = path if os.path.isfile(path) else os.path.join(
-                self.outcar_parser.maindir, 'DOSCAR')
-            with open(path) as f:
-                for n in range(6):
-                    line = f.readline()
-                return int(line.split()[2])
-
-        elif self.parser == 'vasprun':
-            for n in range(self.n_calculations):
-                val = self.vasprun_parser.get(
-                    'calculation[%d]/dos/total/array/set[1]/set[1]/r' % (n + 1))
-                if val is not None:
-                    return len(val)
-        return self._incar.get('NEDOS', 0)
-
-    @property
-    def atom_info(self):
-        if self._atom_info is None:
-            self._atom_info = {}
-
-            if self.parser == 'outcar':
-                ions = self.outcar_parser.get('ions_per_type', [])
-                species = self.outcar_parser.get('species', [])
-                ions = [ions] if isinstance(ions, int) else ions
-                mass_valence = self.outcar_parser.get('mass_valence', [])
-                assert len(ions) == len(species)
-                self.atom_info['n_atoms'] = sum(ions)
-                self.atom_info['n_types'] = len(species)
-
-                element = []
-                atomtype = []
-                for n in range(len(ions)):
-                    element.extend([str(species[n][1])] * ions[n])
-                    atomtype.extend([(n + 1)] * ions[n])
-                self.atom_info['atoms'] = dict(element=element, atomtype=atomtype)
-
-                self.atom_info['atomtypes'] = dict(
-                    atomspertype=ions, element=[s[0] for s in species],
-                    mass=[m[0] for m in mass_valence], valence=[m[1] for m in mass_valence],
-                    pseudopotential=[s[1] for s in species])
-
-            elif self.parser == 'vasprun':
-                self._atom_info['n_atoms'] = self.vasprun_parser.get('atominfo/atoms')
-                self._atom_info['n_types'] = self.vasprun_parser.get('atominfo/types')
-
-                array_keys = [
-                    e.get('name', None) for e in self.vasprun_parser.get('atominfo/array/')]
-                for key in array_keys:
-                    array_info = {}
-                    fields = self.vasprun_parser.get('atominfo/array/[@name="%s"]/field' % key)
-                    rcs = self.vasprun_parser.get('atominfo/array/[@name="%s"]/set/rc/' % key, 1)
-                    for n in range(max(len(rcs), 1)):
-                        val = self.vasprun_parser.get(
-                            'atominfo/array/[@name="%s"]/set/rc[%d]/c' % (key, n + 1))
-                        for i in range(len(fields)):
-                            array_info.setdefault(fields[i], [])
-                            array_info[fields[i]].append(val[i])
-                    self._atom_info[key] = array_info
-
-        return self._atom_info
-
-    def get_n_scf(self, n_calc):
-        if self.parser == 'outcar':
-            return len(self.outcar_parser.get(
-                'calculation', [{}] * (n_calc + 1))[n_calc].get('scf_iteration', []))
-        elif self.parser == 'vasprun':
-            return len(self.vasprun_parser.get('calculation[%d]/scstep/' % (n_calc + 1)))
-        return 0
-
-    def get_structure(self, n_calc):
-        if self.parser == 'outcar':
-            cell = self.outcar_parser.get(
-                'calculation', [{}] * (n_calc + 1))[n_calc].get('lattice_vectors', [None])[0]
-            positions = self.outcar_parser.get(
-                'calculation', [{}] * (n_calc + 1))[n_calc].get('positions_forces', [None])[0]
-            selective = None
-            nose = None
-
-        elif self.parser == 'vasprun':
-            cell = self.vasprun_parser.get(
-                'calculation[%d]/structure/crystal/varray/[@name="basis"]/v' % (n_calc + 1))
-            positions = self.vasprun_parser.get(
-                'calculation[%d]/structure/varray/[@name="positions"]/v' % (n_calc + 1))
-            selective = self.vasprun_parser.get(
-                'calculation[%d]/structure/varray/[@name="selective"]/v' % (n_calc + 1))
-            nose = self.vasprun_parser.get('calculation[%d]/structure/nose/v' % (n_calc + 1))
-
-        else:
-            cell = None
-            positions = None
-            selective = None
-            nose = None
-
-        if positions is not None:
-            positions = pint.Quantity(np.dot(positions, cell), 'angstrom')
-        if cell is not None:
-            cell = pint.Quantity(cell, 'angstrom')
-
-        return dict(cell=cell, positions=positions, selective=selective, nose=nose)
-
-    def get_energies(self, n_calc, n_scf):
-        if self.parser == 'outcar':
-            energies = dict()
-            if n_scf is None:
-                section = self.outcar_parser.get(
-                    'calculation', [{}] * (n_calc + 1))[n_calc]
-            else:
-                section = self.outcar_parser.get('calculation', [{}] * (
-                    n_calc + 1))[n_calc].get('scf_iteration', [{}] * (n_scf + 1))[n_scf]
-            for key in ['total_energy', 'energy_T0', 'energy_entropy0']:
-                energies[key] = section.get(key)
-
-            energies.update(section.get('energy_components', {}))
-            return energies
-
-        elif self.parser == 'vasprun':
-            if n_scf is None:
-                return self._get_key_values(
-                    'calculation[%d]/energy/i' % (n_calc + 1))
-            else:
-                return self._get_key_values(
-                    'calculation[%d]/scstep[%d]/energy/i' % (n_calc + 1, n_scf + 1))
-        return dict()
-
-    def get_forces_stress(self, n_calc):
-        forces = stress = None
-        if self.parser == 'outcar':
-            forces = self.outcar_parser.get('calculation', [{}] * (n_calc + 1))[n_calc].get(
-                'positions_forces', [None, None])[1]
-            stress = self.outcar_parser.get('calculation', [{}] * (n_calc + 1))[n_calc].get(
-                'stress', None)
-        elif self.parser == 'vasprun':
-            forces = self.vasprun_parser.get(
-                'calculation[%d]/varray/[@name="forces"]/v' % (n_calc + 1))
-            stress = self.vasprun_parser.get(
-                'calculation[%d]/varray/[@name="stress"]/v' % (n_calc + 1))
-
-        return forces, stress
-
-    def get_eigenvalues(self, n_calc):
-        n_kpts = len(self.kpoints_info.get('k_mesh_points', []))
-        eigenvalues = None
-
-        if self.parser == 'outcar':
-            eigenvalues = self.outcar_parser.get(
-                'calculation', [{}] * (n_calc + 1))[n_calc].get('eigenvalues')
-
-            if eigenvalues is None:
-                return
-            n_eigs = len(eigenvalues) // (self.ispin * n_kpts)
-            eigenvalues = np.reshape(eigenvalues, (n_eigs, self.ispin, n_kpts, self.n_bands, 3))
-            # eigenvalues can also be printed every scf iteration but we only save the
-            # last one, which corresponds to the calculation
-            eigenvalues = np.transpose(eigenvalues)[1:].T[-1]
-
-        elif self.parser == 'vasprun':
-            root = 'calculation[%d]/eigenvalues/array' % (n_calc + 1)
-            if self.vasprun_parser.get(root) is None:
-                return
-            eigenvalues = self.vasprun_parser.root.findall('./%s/set//r' % root)
-            eigenvalues = np.array([e.text.split() for e in eigenvalues], dtype=float)
-            eigenvalues = np.reshape(eigenvalues, (self.ispin, n_kpts, self.n_bands, 2))
-
-        return eigenvalues
-
-    def get_total_dos(self, n_calc):
-        dos_energies = dos_values = dos_integrated = e_fermi = None
-
-        if self.parser == 'outcar':
-            if n_calc != (self.n_calculations - 1):
-                return dos_energies, dos_values, dos_integrated, e_fermi
-            path = os.path.join(self.outcar_parser.maindir, 'DOSCAR%s' % os.path.basename(
-                self.outcar_parser.mainfile).strip('OUTCAR'))
-            path = path if os.path.isfile(path) else os.path.join(
-                self.outcar_parser.maindir, 'DOSCAR')
-            if not os.path.isfile(path):
-                return dos_energies, dos_values, dos_integrated, e_fermi
-
-            dos = []
-            n_dos = 0
-            with self.outcar_parser.open(path) as f:
-                for i, line in enumerate(f):
-                    if i < 5:
-                        continue
-                    if i == 5:
-                        e_fermi = float(line.split()[1])
-                        n_dos = int(line.split()[2])
-                    if i > 5:
-                        dos.append([float(v) for v in line.split()])
-                    if i >= n_dos + 5:
-                        break
-            if not dos:
-                return dos_energies, dos_values, dos_integrated, e_fermi
-
-            # DOSCAR fomat (spin) energy dos_up dos_down integrated_up integrated_down
-            dos = np.transpose(dos)
-            dos_energies = dos[0]
-            dos_values = dos[1: 1 + self.ispin]
-            dos_integrated = dos[1 + self.ispin: 2 * self.ispin + 1]
-
-        elif self.parser == 'vasprun':
-            root = 'calculation[%d]/dos' % (n_calc + 1)
-            if self.vasprun_parser.get(root) is None:
-                return dos_energies, dos_values, dos_integrated, e_fermi
-
-            dos = self.vasprun_parser.root.findall('./%s/total/array/set//r' % root)
-            dos = np.array([e.text.split() for e in dos], dtype=float)
-            dos = np.reshape(dos, (self.ispin, self.n_dos, 3))
-
-            dos = np.transpose(dos)
-            dos_energies = dos[0].T[0]
-            dos_values = dos[1].T
-            dos_integrated = dos[2].T
-
-            # unit of dos in vasprun is states/eV/cell
-            cell = self.get_structure(n_calc)['cell']
-            volume = np.abs(np.linalg.det(cell.to('m').magnitude))
-            dos_values *= volume
-
-            e_fermi = self.vasprun_parser.get('%s/i/[@name="efermi"]' % root, 0.0)
-
-        return dos_energies, dos_values, dos_integrated, e_fermi
-
-    def get_partial_dos(self, n_calc):
-        n_atoms = self.atom_info['n_atoms']
-        dos = fields = None
-        if self.parser == 'outcar':
-            if n_calc != (self.n_calculations - 1):
-                return dos, fields
-            path = os.path.join(self.outcar_parser.maindir, 'DOSCAR%s' % os.path.basename(
-                self.outcar_parser.mainfile).strip('OUTCAR'))
-            path = path if os.path.isfile(path) else os.path.join(
-                self.outcar_parser.maindir, 'DOSCAR')
-            if not os.path.isfile(path):
-                return dos, fields
-
-            dos = []
-            n_dos = 0
-            atom = 1
-            with self.outcar_parser.open(path) as f:
-                for i, line in enumerate(f):
-                    if i == 0:
-                        if int(line.split()[2]) != 1:
-                            return None, None
-                    elif i < 5:
-                        continue
-                    elif i == 5:
-                        n_dos = int(line.split()[2])
-                    if i == ((n_dos + 1) * atom) + 5:
-                        atom += 1
-                        continue
-                    if i > (n_dos + 6):
-                        dos.append([float(v) for v in line.split()])
-                    if i >= ((n_dos + 1) * (n_atoms + 1) + 5):
-                        break
-            if len(dos) == 0:
-                return None, None
-
-            dos = np.transpose(dos)[1:]
-            n_lm = len(dos) // self.ispin
-            dos = np.reshape(dos, (n_lm, self.ispin, n_atoms, n_dos))
-
-            if n_lm == 3:
-                fields = ['s', 'p', 'd']
-            elif n_lm == 9:
-                fields = ['s', 'py', 'pz', 'px', 'dxy', 'dyz', 'dz2', 'dxz', 'dx2']
-            elif n_lm == 16:
-                fields = [
-                    's', 'py', 'pz', 'px', 'dxy', 'dyz', 'dz2', 'dxz', 'dx2', 'f-3',
-                    'f-2', 'f-1', 'f0', 'f1', 'f2', 'f3']
-            else:
-                fields = [None] * n_lm
-                self.outcar_parser.logger.warn(
-                    'Cannot determine lm fields for n_lm', data=dict(n_lm=n_lm))
-
-        elif self.parser == 'vasprun':
-            root = 'calculation[%d]/dos' % (n_calc + 1)
-            if self.vasprun_parser.get('%s/partial' % root) is None:
-                return dos, fields
-
-            # TODO use atomprojecteddos section
-            fields = self.vasprun_parser.get('%s/partial/array/field' % root)
-            dos = self.vasprun_parser.root.findall('./%s/partial/array/set//r' % root)
-            dos = np.array([e.text.split() for e in dos], dtype=float)
-            dos = np.reshape(dos, (n_atoms, self.ispin, self.n_dos, len(fields)))
-
-            fields = [field for field in fields if field != 'energy']
-            dos = np.transpose(dos)[1:]
-            dos = np.transpose(dos, axes=(0, 2, 3, 1))
-
-        return dos, fields
+        self._vasprun_parser = VASPXml()
+        self._outcar_parser = VASPOutcar()
+
+    def init_parser(self, filepath, logger):
+        self.parser = self._outcar_parser if 'OUTCAR' in filepath else self._vasprun_parser
+        self.parser.init_parser(filepath, logger)
 
     def parse_incarsout(self):
         sec_method = self.archive.section_run[-1].section_method[-1]
 
-        incar_parameters = self.get_incar_out()
+        incar_parameters = self.parser.get_incar_out()
         for key, val in incar_parameters.items():
             if isinstance(val, np.ndarray):
                 val = list(val)
@@ -723,11 +810,11 @@ class VASPParser(FairdiParser):
             self.logger.warn('Error setting metainfo defintion x_vasp_incar_out', data=dict(
                 incar=incar_parameters))
 
-        prec = 1.3 if 'acc' in self.incar.get('PREC', '') else 1.0
+        prec = 1.3 if 'acc' in self.parser.incar.get('PREC', '') else 1.0
         sec_basis_set_cell_dependent = self.archive.section_run[-1].m_create(
             BasisSetCellDependent)
         sec_basis_set_cell_dependent.basis_set_planewave_cutoff = pint.Quantity(
-            self.incar.get('ENMAX', 0.0) * prec, 'eV')
+            self.parser.incar.get('ENMAX', 0.0) * prec, 'eV')
 
         sec_method_basis_set = sec_method.m_create(MethodBasisSet)
         sec_method_basis_set.mapping_section_method_basis_set_cell_associated = sec_basis_set_cell_dependent
@@ -736,7 +823,7 @@ class VASPParser(FairdiParser):
         sec_method = self.archive.section_run[-1].m_create(Method)
 
         # input incar
-        incar_parameters = self.get_incar()
+        incar_parameters = self.parser.get_incar()
         for key, val in incar_parameters.items():
             if isinstance(val, np.ndarray):
                 val = list(val)
@@ -747,11 +834,11 @@ class VASPParser(FairdiParser):
             self.logger.warn('Error setting metainfo defintion x_vasp_incar_in', data=dict(
                 incar=incar_parameters))
 
-        sec_method.electronic_structure_method = 'DFT+U' if self.incar.get(
+        sec_method.electronic_structure_method = 'DFT+U' if self.parser.incar.get(
             'LDAU', False) else 'DFT'
 
         # kpoints
-        for key, val in self.kpoints_info.items():
+        for key, val in self.parser.kpoints_info.items():
             if val is not None:
                 try:
                     setattr(sec_method, key, val)
@@ -759,7 +846,7 @@ class VASPParser(FairdiParser):
                     self.logger.warn('Error setting metainfo', data=dict(key=key))
 
         # atom properties
-        atomtypes = self.atom_info.get('atomtypes', {})
+        atomtypes = self.parser.atom_info.get('atomtypes', {})
         element = atomtypes.get('element', [])
         atom_counts = {e: 0 for e in element}
         for i in range(len(element)):
@@ -782,9 +869,9 @@ class VASPParser(FairdiParser):
 
         self.parse_incarsout()
 
-        gga = self.incar.get('GGA', None)
+        gga = self.parser.incar.get('GGA', None)
         if gga is not None:
-            xc_functionals = self.xc_functional_mapping.get(gga, [])
+            xc_functionals = self.parser.xc_functional_mapping.get(gga, [])
             for xc_functional in xc_functionals:
                 sec_xc_functional = sec_method.m_create(XCFunctionals)
                 sec_xc_functional.XC_functional_name = xc_functional
@@ -795,14 +882,14 @@ class VASPParser(FairdiParser):
         def parse_system(n_calc):
             sec_system = sec_run.m_create(System)
 
-            structure = self.get_structure(n_calc)
+            structure = self.parser.get_structure(n_calc)
             cell = structure.get('cell', None)
             if cell is not None:
                 sec_system.simulation_cell = cell
                 sec_system.lattice_vectors = cell
 
             sec_system.configuration_periodic_dimensions = [True] * 3
-            sec_system.atom_labels = self.atom_info.get('atoms', {}).get('element', [])
+            sec_system.atom_labels = self.parser.atom_info.get('atoms', {}).get('element', [])
 
             positions = structure.get('positions', None)
             if positions is not None:
@@ -827,12 +914,12 @@ class VASPParser(FairdiParser):
                 section = sec_run.section_single_configuration_calculation[-1].m_create(ScfIteration)
                 ext = '_scf_iteration'
 
-            energies = self.get_energies(n_calc, n_scf)
+            energies = self.parser.get_energies(n_calc, n_scf)
             for key, val in energies.items():
                 if val is None:
                     continue
                 val = pint.Quantity(val, 'eV')
-                metainfo_key = self.metainfo_mapping.get(key, None)
+                metainfo_key = self.parser.metainfo_mapping.get(key, None)
                 if metainfo_key is None:
                     continue
                 try:
@@ -843,7 +930,7 @@ class VASPParser(FairdiParser):
             return section
 
         def parse_eigenvalues(n_calc):
-            eigenvalues = self.get_eigenvalues(n_calc)
+            eigenvalues = self.parser.get_eigenvalues(n_calc)
             if eigenvalues is None:
                 return
 
@@ -860,17 +947,17 @@ class VASPParser(FairdiParser):
                 occs[i] < 0.5)]) for i in range(len(eigs))]
             sec_scc.energy_reference_highest_occupied = pint.Quantity(valence_max, 'eV')
             sec_scc.energy_reference_lowest_unoccupied = pint.Quantity(conduction_min, 'eV')
-            if self.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
+            if self.parser.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
                 # I removed normalization since it imho it should be done by normalizer
                 sec_k_band = sec_scc.m_create(KBand)
-                divisions = int(self.kpoints_info.get('divisions', None))
-                kpoints = self.kpoints_info.get('k_mesh_points', [])
+                divisions = int(self.parser.kpoints_info.get('divisions', None))
+                kpoints = self.parser.kpoints_info.get('k_mesh_points', [])
                 n_segments = len(kpoints) // divisions
                 kpoints = np.reshape(kpoints, (n_segments, divisions, 3))
                 eigs = np.reshape(eigs, (
-                    self.ispin, n_segments, divisions, self.n_bands))
+                    self.parser.ispin, n_segments, divisions, self.parser.n_bands))
                 occs = np.reshape(occs, (
-                    self.ispin, n_segments, divisions, self.n_bands))
+                    self.parser.ispin, n_segments, divisions, self.parser.n_bands))
                 eigs = np.transpose(eigs, axes=(1, 0, 2, 3))
                 occs = np.transpose(occs, axes=(1, 0, 2, 3))
                 for n in range(n_segments):
@@ -885,7 +972,7 @@ class VASPParser(FairdiParser):
                 sec_eigenvalues.eigenvalues_occupation = occs
 
         def parse_dos(n_calc):
-            energies, values, integrated, e_fermi = self.get_total_dos(n_calc)
+            energies, values, integrated, e_fermi = self.parser.get_total_dos(n_calc)
 
             # total dos
             if values is not None:
@@ -896,7 +983,7 @@ class VASPParser(FairdiParser):
                 sec_dos.dos_values = pint.Quantity(values, '1/eV').to('1/joule').magnitude
                 sec_dos.dos_integrated_values = integrated
 
-                sec_dos.energy_reference_fermi = pint.Quantity([e_fermi] * self.ispin, 'eV')
+                sec_dos.energy_reference_fermi = pint.Quantity([e_fermi] * self.parser.ispin, 'eV')
 
             # partial dos
             # TODO: I do not know how the f-orbitals are arranged
@@ -906,20 +993,20 @@ class VASPParser(FairdiParser):
                 'dyz': [2, 4], 'dz2': [2, 5], 'f': [3, -1], 'f-3': [3, 0], 'f-2': [3, 1],
                 'f-1': [3, 2], 'f0': [3, 3], 'f1': [3, 4], 'f2': [3, 5], 'f3': [3, 6]}
 
-            dos, fields = self.get_partial_dos(n_calc)
+            dos, fields = self.parser.get_partial_dos(n_calc)
             if dos is not None:
                 sec_dos.dos_values_lm = pint.Quantity(dos, '1/eV').to('1/joule').magnitude
                 sec_dos.dos_lm = [lm_converter.get(field, [-1, -1]) for field in fields]
                 sec_dos.dos_m_kind = 'polynomial'
 
-        for n in range(self.n_calculations):
+        for n in range(self.parser.n_calculations):
             # energies
             sec_scc = parse_energy(n, None)
-            for n_scf in range(self.get_n_scf(n)):
+            for n_scf in range(self.parser.get_n_scf(n)):
                 parse_energy(n, n_scf)
 
             # forces and stress
-            forces, stress = self.get_forces_stress(n)
+            forces, stress = self.parser.get_forces_stress(n)
             if forces is not None:
                 sec_scc.atom_forces = pint.Quantity(forces, 'eV/angstrom')
             if stress is not None:
@@ -942,25 +1029,24 @@ class VASPParser(FairdiParser):
         self.archive = archive
         self.logger = logging.getLogger(__name__) if logger is None else logger
         self.init_parser(filepath, logger)
-
         sec_run = self.archive.m_create(Run)
-        program_name = self.header.get('program', '')
+        program_name = self.parser.header.get('program', '')
         if program_name.strip().upper() != 'VASP':
             self.logger.error('invalid program name', data=dict(program_name=program_name))
             return
         sec_run.program_name = 'VASP'
 
-        version = ' '.join([self.header.get(key, '') for key in [
+        version = ' '.join([self.parser.header.get(key, '') for key in [
             'version', 'subversion', 'platform']]).strip()
         if version:
             sec_run.program_version = version
 
         sec_run.program_basis_set_type = 'plane waves'
 
-        date = self.header.get('date')
+        date = self.parser.header.get('date')
         if date is not None:
             date = datetime.strptime(date.strip(), '%Y %m %d').date()
-            time = self.header.get('time', '0:0:0')
+            time = self.parser.header.get('time', '0:0:0')
             time = datetime.strptime(time.strip(), '%H:%M:%S').timetz()
             dtime = datetime.combine(date, time) - datetime.utcfromtimestamp(0)
             sec_run.program_compilation_datetime = dtime.total_seconds()
