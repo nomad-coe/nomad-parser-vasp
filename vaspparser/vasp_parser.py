@@ -326,7 +326,9 @@ class VASPXml(Parser):
     def calculations(self):
         if self._calculations is None:
             self._calculations = self.parser.root.findall('calculation')
-            self._calculation_parsers = [XMLParser() for _ in self._calculations]
+            self._calculation_parsers = [
+                XMLParser(mainfile=self.parser.mainfile, logger=self.parser.logger)
+                for _ in self._calculations]
             for n in range(len(self._calculation_parsers)):
                 self._calculation_parsers[n]._file_handler = self._calculations[n]
         return self._calculations
