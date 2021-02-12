@@ -369,9 +369,8 @@ class VASPXml(Parser):
     @property
     def n_bands(self):
         if self._n_bands is None:
-            for n in range(self.n_calculations):
-                val = self.parser.get(
-                    'calculation[%d]/eigenvalues/array/set[1]/set[1]/set[1]/r' % (n + 1))
+            for n in range(0, len(self._calculation_parsers)):
+                val = self._calculation_parsers[n].get('eigenvalues/array/set[1]/set[1]/set[1]/r')
                 if val is not None:
                     self._n_bands = len(val)
                     break
@@ -382,9 +381,8 @@ class VASPXml(Parser):
     @property
     def n_dos(self):
         if self._n_dos is None:
-            for n in range(self.n_calculations):
-                val = self.parser.get(
-                    'calculation[%d]/dos/total/array/set[1]/set[1]/r' % (n + 1))
+            for n in range(0, len(self._calculation_parsers)):
+                val = self._calculation_parsers[n].get('dos/total/array/set[1]/set[1]/r')
                 if val is not None:
                     self._n_dos = len(val)
                     break
