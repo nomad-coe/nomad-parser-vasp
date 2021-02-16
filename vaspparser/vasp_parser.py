@@ -445,8 +445,12 @@ class VASPXml(Parser):
         if not eigenvalues:
             return
 
-        eigenvalues = np.array([e.text.split() for e in eigenvalues], dtype=float)
-        eigenvalues = np.reshape(eigenvalues, (self.ispin, n_kpts, self.n_bands, 2))
+        try:
+            eigenvalues = np.array([e.text.split() for e in eigenvalues], dtype=float)
+            eigenvalues = np.reshape(eigenvalues, (self.ispin, n_kpts, self.n_bands, 2))
+        except Exception:
+            self.parser.logger.error('Error reading eigenvalues')
+            return
 
         return eigenvalues
 
@@ -456,9 +460,12 @@ class VASPXml(Parser):
         dos = self._calculation_parsers[n_calc].root.findall('dos/total/array/set//r')
         if not dos:
             return dos_energies, dos_values, dos_integrated, e_fermi
-
-        dos = np.array([e.text.split() for e in dos], dtype=float)
-        dos = np.reshape(dos, (self.ispin, self.n_dos, 3))
+        try:
+            dos = np.array([e.text.split() for e in dos], dtype=float)
+            dos = np.reshape(dos, (self.ispin, self.n_dos, 3))
+        except Exception:
+            self.parser.logger.error('Error reading total dos.')
+            return dos_energies, dos_values, dos_integrated, e_fermi
 
         dos = np.transpose(dos)
         dos_energies = dos[0].T[0]
@@ -482,8 +489,12 @@ class VASPXml(Parser):
 
         # TODO use atomprojecteddos section
         fields = self._calculation_parsers[n_calc].get('dos/partial/array/field')
-        dos = np.array([e.text.split() for e in dos], dtype=float)
-        dos = np.reshape(dos, (n_atoms, self.ispin, self.n_dos, len(fields)))
+        try:
+            dos = np.array([e.text.split() for e in dos], dtype=float)
+            dos = np.reshape(dos, (n_atoms, self.ispin, self.n_dos, len(fields)))
+        except Exception:
+            self.parser.logger.error('Error reading partial dos.')
+            return None, None
 
         fields = [field for field in fields if field != 'energy']
         dos = np.transpose(dos)[1:]
