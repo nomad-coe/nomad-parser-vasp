@@ -952,12 +952,17 @@ class VASPParser(FairdiParser):
             occs = eigenvalues[1].T
 
             # get valence(conduction) and maximum(minimum)
-            valence_max = [max([eigs[i, o[0], o[1]] for o in np.argwhere(
-                occs[i] >= 0.5)]) for i in range(len(eigs))]
-            conduction_min = [min([eigs[i, o[0], o[1]] for o in np.argwhere(
-                occs[i] < 0.5)]) for i in range(len(eigs))]
+            # we have a case where no band is occupied, i.e. valence_max should be below
+            # min(eigs)
+            valence_max, conduction_min = [], []
+            for i in range(len(eigs)):
+                occupied = [eigs[i, o[0], o[1]] for o in np.argwhere(occs[i] >= 0.5)]
+                valence_max.append(np.amin(eigs[i]) - 1.0 if not occupied else max(occupied))
+                unoccupied = [eigs[i, o[0], o[1]] for o in np.argwhere(occs[i] < 0.5)]
+                conduction_min.append(np.amin(eigs[i]) - 1.0 if not unoccupied else min(unoccupied))
             sec_scc.energy_reference_highest_occupied = pint.Quantity(valence_max, 'eV')
             sec_scc.energy_reference_lowest_unoccupied = pint.Quantity(conduction_min, 'eV')
+
             if self.parser.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
                 # I removed normalization since it imho it should be done by normalizer
                 sec_k_band = sec_scc.m_create(KBand)
@@ -1019,10 +1024,16 @@ class VASPParser(FairdiParser):
             # forces and stress
             forces, stress = self.parser.get_forces_stress(n)
             if forces is not None:
-                sec_scc.atom_forces = pint.Quantity(forces, 'eV/angstrom')
+                try:
+                    sec_scc.atom_forces = pint.Quantity(forces, 'eV/angstrom')
+                except Exception:
+                    self.logger.error('Error parsing forces.')
             if stress is not None:
-                # TODO verify if stress unit in xml is also kbar
-                sec_scc.stress_tensor = pint.Quantity(stress, 'kbar')
+                try:
+                    # TODO verify if stress unit in xml is also kbar
+                    sec_scc.stress_tensor = pint.Quantity(stress, 'kbar')
+                except Exception:
+                    self.logger.error('Error parsing stress.')
 
             # structure
             sec_system = parse_system(n)
