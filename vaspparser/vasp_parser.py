@@ -53,7 +53,7 @@ class OutcarParser(TextParser):
         self._quantities = []
 
         def str_to_array(val_in):
-            val = [v.split() for v in val_in.strip().split('\n') if '--' not in v]
+            val = [re.findall(r'(\-?\d\.[\dEe]+)', v) for v in val_in.strip().split('\n') if '--' not in v]
             return np.array([v[0:3] for v in val], float), np.array([v[3:6] for v in val], float)
 
         def str_to_stress(val_in):
@@ -92,7 +92,7 @@ class OutcarParser(TextParser):
 
         self._quantities.append(Quantity(
             'calculation',
-            r'(\-+\s*Iteration\s*\d+\(\s*1\)\s*\-+[\s\S]+?FREE ENERGIE OF THE ION-ELECTRON SYSTEM \(eV\))'
+            r'(\-\-\s*Iteration\s*\d+\(\s*1\)\s*[\s\S]+?(?:FREE ENERGIE OF THE ION\-ELECTRON SYSTEM \(eV\)))'
             r'([\s\S]+?\-{100})',
             repeats=True, sub_parser=TextParser(quantities=[
                 Quantity(
@@ -398,7 +398,7 @@ class VASPXml(Parser):
             self._atom_info['n_types'] = self.parser.get('atominfo/types')
 
             array_keys = [
-                e.get('name', None) for e in self.parser.get('atominfo/array/')]
+                e.get('name', None) for e in self.parser.get('atominfo/array/', [])]
             for key in array_keys:
                 array_info = {}
                 fields = self.parser.get('atominfo/array/[@name="%s"]/field' % key)
@@ -413,7 +413,7 @@ class VASPXml(Parser):
         return self._atom_info
 
     def get_n_scf(self, n_calc):
-        return len(self._calculation_parsers[n_calc].get('scstep/'))
+        return len(self._calculation_parsers[n_calc].get('scstep/', []))
 
     def get_structure(self, n_calc):
         cell = self._calculation_parsers[n_calc].get('structure/crystal/varray[@name="basis"]/v')
@@ -622,7 +622,9 @@ class VASPOutcar(Parser):
             species = self.parser.get('species', [])
             ions = [ions] if isinstance(ions, int) else ions
             mass_valence = self.parser.get('mass_valence', [])
-            assert len(ions) == len(species)
+            if len(ions) != len(species):
+                return self._atom_info
+
             self._atom_info['n_atoms'] = sum(ions)
             self._atom_info['n_types'] = len(species)
 
@@ -689,7 +691,11 @@ class VASPOutcar(Parser):
         if eigenvalues is None:
             return
         n_eigs = len(eigenvalues) // (self.ispin * n_kpts)
-        eigenvalues = np.reshape(eigenvalues, (n_eigs, self.ispin, n_kpts, self.n_bands, 3))
+        try:
+            eigenvalues = np.reshape(eigenvalues, (n_eigs, self.ispin, n_kpts, self.n_bands, 3))
+        except Exception:
+            self.parser.logger.error('Error reading eigenvalues')
+            return
         # eigenvalues can also be printed every scf iteration but we only save the
         # last one, which corresponds to the calculation
         eigenvalues = np.transpose(eigenvalues)[1:].T[-1]
@@ -767,7 +773,11 @@ class VASPOutcar(Parser):
 
         dos = np.transpose(dos)[1:]
         n_lm = len(dos) // self.ispin
-        dos = np.reshape(dos, (n_lm, self.ispin, n_atoms, n_dos))
+        try:
+            dos = np.reshape(dos, (n_lm, self.ispin, n_atoms, n_dos))
+        except Exception:
+            self.parser.logger.error('Error reading partial dos.')
+            return None, None
 
         if n_lm == 3:
             fields = ['s', 'p', 'd']
@@ -990,6 +1000,13 @@ class VASPParser(FairdiParser):
         def parse_dos(n_calc):
             energies, values, integrated, e_fermi = self.parser.get_total_dos(n_calc)
 
+            # TODO: I do not know how the f-orbitals are arranged
+            lm_converter = {
+                's': [0, 0], 'p': [1, -1], 'px': [1, 0], 'py': [1, 1], 'pz': [1, 2],
+                'd': [2, -1], 'dx2': [2, 0], 'dxy': [2, 1], 'dxz': [2, 2], 'dy2': [2, 3],
+                'dyz': [2, 4], 'dz2': [2, 5], 'f': [3, -1], 'f-3': [3, 0], 'f-2': [3, 1],
+                'f-1': [3, 2], 'f0': [3, 3], 'f1': [3, 4], 'f2': [3, 5], 'f3': [3, 6]}
+
             # total dos
             if values is not None:
                 sec_scc = sec_run.section_single_configuration_calculation[-1]
@@ -1001,19 +1018,12 @@ class VASPParser(FairdiParser):
 
                 sec_dos.energy_reference_fermi = pint.Quantity([e_fermi] * self.parser.ispin, 'eV')
 
-            # partial dos
-            # TODO: I do not know how the f-orbitals are arranged
-            lm_converter = {
-                's': [0, 0], 'p': [1, -1], 'px': [1, 0], 'py': [1, 1], 'pz': [1, 2],
-                'd': [2, -1], 'dx2': [2, 0], 'dxy': [2, 1], 'dxz': [2, 2], 'dy2': [2, 3],
-                'dyz': [2, 4], 'dz2': [2, 5], 'f': [3, -1], 'f-3': [3, 0], 'f-2': [3, 1],
-                'f-1': [3, 2], 'f0': [3, 3], 'f1': [3, 4], 'f2': [3, 5], 'f3': [3, 6]}
-
-            dos, fields = self.parser.get_partial_dos(n_calc)
-            if dos is not None:
-                sec_dos.dos_values_lm = pint.Quantity(dos, '1/eV').to('1/joule').magnitude
-                sec_dos.dos_lm = [lm_converter.get(field, [-1, -1]) for field in fields]
-                sec_dos.dos_m_kind = 'polynomial'
+                # partial dos
+                dos, fields = self.parser.get_partial_dos(n_calc)
+                if dos is not None:
+                    sec_dos.dos_values_lm = pint.Quantity(dos, '1/eV').to('1/joule').magnitude
+                    sec_dos.dos_lm = [lm_converter.get(field, [-1, -1]) for field in fields]
+                    sec_dos.dos_m_kind = 'polynomial'
 
         for n in range(self.parser.n_calculations):
             # energies
