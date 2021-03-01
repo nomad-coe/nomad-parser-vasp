@@ -53,7 +53,7 @@ class OutcarParser(TextParser):
         self._quantities = []
 
         def str_to_array(val_in):
-            val = [re.findall(r'(\-?\d\.[\dEe]+)', v) for v in val_in.strip().split('\n') if '--' not in v]
+            val = [re.findall(r'(\-?\d+\.[\dEe]+)', v) for v in val_in.strip().split('\n') if '--' not in v]
             return np.array([v[0:3] for v in val], float), np.array([v[3:6] for v in val], float)
 
         def str_to_stress(val_in):
@@ -113,14 +113,19 @@ class OutcarParser(TextParser):
                     repeats=False, dtype=float),
                 Quantity(
                     'stress',
-                    r'in kB\s*([\-\d\. E]+)', str_operation=str_to_stress, convert=False),
+                    r'in kB\s*(\-?\d+\.\d+)\s*(\-?\d+\.\d+)\s*(\-?\d+\.\d+)\s*'
+                    r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)',
+                    str_operation=str_to_stress, convert=False),
                 Quantity(
                     'positions_forces',
                     r'POSITION\s*TOTAL\-FORCE \(eV/Angst\)\s*\-+\s*([\d\.\s\-E]+)',
                     str_operation=str_to_array, convert=False),
                 Quantity(
                     'lattice_vectors',
-                    r'direct lattice vectors\s*reciprocal lattice vectors([\d\.\s\-E]+)',
+                    r'direct lattice vectors\s*reciprocal lattice vectors\s*'
+                    r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)'
+                    r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)'
+                    r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)',
                     str_operation=str_to_array, convert=False),
                 Quantity(
                     'converged',
@@ -349,17 +354,17 @@ class VASPXml(Parser):
         if self._kpoints_info is None:
             self._kpoints_info = dict()
             self._kpoints_info['x_vasp_k_points_generation_method'] = self.parser.get(
-                'kpoints/generation/param')
+                'kpoints[1]/generation/param')
             self._kpoints_info['k_mesh_points'] = self.parser.get(
-                'kpoints/varray/[@name="kpointlist"]/v')
+                'kpoints[1]/varray/[@name="kpointlist"]/v')
             self._kpoints_info['k_mesh_weights'] = self.parser.get(
-                'kpoints/varray/[@name="weights"]/v')
+                'kpoints[1]/varray/[@name="weights"]/v')
             self._kpoints_info['x_vasp_tetrahedrons_list'] = self.parser.get(
-                'kpoints/varray/[@name="tetrahedronlist"]/v')
+                'kpoints[1]/varray/[@name="tetrahedronlist"]/v')
             self._kpoints_info['divisions'] = self.parser.get(
-                'kpoints/generation/i/[@name="divisions"]')
-            self._kpoints_info['points'] = self.parser.get('kpoints/generation/v')
-            volumeweight = self.parser.get('kpoints/i/[@name="volumeweight"]')
+                'kpoints[1]/generation/i/[@name="divisions"]')
+            self._kpoints_info['points'] = self.parser.get('kpoints[1]/generation/v')
+            volumeweight = self.parser.get('kpoints[1]/i/[@name="volumeweight"]')
             if volumeweight is not None:
                 volumeweight = pint.Quantity(volumeweight, 'angstrom ** 3').to('m**3')
                 # TODO set propert unit in metainfo
@@ -416,10 +421,15 @@ class VASPXml(Parser):
         return len(self._calculation_parsers[n_calc].get('scstep/', []))
 
     def get_structure(self, n_calc):
-        cell = self._calculation_parsers[n_calc].get('structure/crystal/varray[@name="basis"]/v')
-        positions = self._calculation_parsers[n_calc].get('structure/varray/[@name="positions"]/v')
-        selective = self._calculation_parsers[n_calc].get('structure/varray/[@name="selective"]/v')
-        nose = self._calculation_parsers[n_calc].get('structure/nose/v')
+        calculation = self._calculation_parsers[n_calc]
+        cell = calculation.get('structure[1]/crystal/varray[@name="basis"]/v')
+        if cell is None:
+            calculation = self.parser
+            cell = calculation.get('structure[1]/crystal/varray[@name="basis"]/v')
+
+        positions = calculation.get('structure[1]/varray/[@name="positions"]/v')
+        selective = calculation.get('structure[1]/varray/[@name="selective"]/v')
+        nose = calculation.get('structure[1]/nose/v')
 
         if positions is not None:
             positions = pint.Quantity(np.dot(positions, cell), 'angstrom')
@@ -447,7 +457,8 @@ class VASPXml(Parser):
 
         try:
             eigenvalues = np.array([e.text.split() for e in eigenvalues], dtype=float)
-            eigenvalues = np.reshape(eigenvalues, (self.ispin, n_kpts, self.n_bands, 2))
+            eigenvalues = np.reshape(eigenvalues, (
+                len(eigenvalues) // (n_kpts * self.n_bands), n_kpts, self.n_bands, 2))
         except Exception:
             self.parser.logger.error('Error reading eigenvalues')
             return
@@ -462,7 +473,7 @@ class VASPXml(Parser):
             return dos_energies, dos_values, dos_integrated, e_fermi
         try:
             dos = np.array([e.text.split() for e in dos], dtype=float)
-            dos = np.reshape(dos, (self.ispin, self.n_dos, 3))
+            dos = np.reshape(dos, (len(dos) // self.n_dos, self.n_dos, 3))
         except Exception:
             self.parser.logger.error('Error reading total dos.')
             return dos_energies, dos_values, dos_integrated, e_fermi
@@ -655,7 +666,7 @@ class VASPOutcar(Parser):
         nose = None
 
         if positions is not None:
-            positions = pint.Quantity(np.dot(positions, cell), 'angstrom')
+            positions = pint.Quantity(positions, 'angstrom')
         if cell is not None:
             cell = pint.Quantity(cell, 'angstrom')
 
@@ -716,16 +727,20 @@ class VASPOutcar(Parser):
         dos = []
         n_dos = 0
         with self.parser.open(path) as f:
-            for i, line in enumerate(f):
-                if i < 5:
-                    continue
-                if i == 5:
-                    e_fermi = float(line.split()[1])
-                    n_dos = int(line.split()[2])
-                if i > 5:
-                    dos.append([float(v) for v in line.split()])
-                if i >= n_dos + 5:
-                    break
+            try:
+                for i, line in enumerate(f):
+                    if i < 5:
+                        continue
+                    if i == 5:
+                        e_fermi = float(line.split()[1])
+                        n_dos = int(line.split()[2])
+                    if i > 5:
+                        dos.append([float(v) for v in line.split()])
+                    if i >= n_dos + 5:
+                        break
+            except Exception:
+                self.parser.logger.error('Error reading DOSCAR')
+
         if not dos:
             return dos_energies, dos_values, dos_integrated, e_fermi
 
