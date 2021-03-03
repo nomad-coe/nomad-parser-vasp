@@ -634,6 +634,20 @@ class VASPOutcar(Parser):
             ions = [ions] if isinstance(ions, int) else ions
             mass_valence = self.parser.get('mass_valence', [])
             if len(ions) != len(species):
+                # get it from POSCAR
+                path = os.path.join(self.parser.maindir, 'POSCAR%s' % os.path.basename(
+                    self.parser.mainfile).strip('OUTCAR'))
+                path = path if os.path.isfile(path) else os.path.join(
+                    self.parser.maindir, 'POSCAR')
+                with open(path) as f:
+                    for _ in range(7):
+                        line = f.readline()
+                        try:
+                            ions = [int(n) for n in line.split()]
+                        except Exception:
+                            pass
+            if len(ions) != len(species):
+                self.parser.logger.error('Inconsistent number of ions and species.')
                 return self._atom_info
 
             self._atom_info['n_atoms'] = sum(ions)
