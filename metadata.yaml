@@ -1,9 +1,11 @@
 codeLabel: VASP
 codeLabelStyle: All in capitals
+codeName: vasp
 codeUrl: https://www.vasp.at/
 parserDirName: dependencies/parsers/vasp/
-parserGitUrl: https://gitlab.mpcdf.mpg.de/nomad-lab/parser-vasp
+parserGitUrl: https://github.com/nomad-coe/nomad-parser-vasp.git
 parserSpecific: ''
+preamble: ''
 tableOfFiles: |
   |Input Filename| Description|
   |--- | --- |
