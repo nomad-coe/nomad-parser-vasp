@@ -88,13 +88,13 @@ class OutcarParser(TextParser):
         def str_to_header(val_in):
             version, build_date, build_type, platform, date, time, parallel = val_in.split()
             parallel = 'parallel' if parallel == 'running' else parallel
-            sub_version = '%s %s %s' % (build_date, build_type, parallel)
+            subversion = '%s %s %s' % (build_date, build_type, parallel)
             date = date.replace('.', ' ')
-            return dict(version=version, sub_version=sub_version, platform=platform, date=date, time=time)
+            return dict(version=version, subversion=subversion, platform=platform, date=date, time=time)
 
         scf_iteration = [
             Quantity(
-                'total_energy', r'free energy\s*TOTEN\s*=\s*([\d\.]+)\s*eV',
+                'energy_total', r'free energy\s*TOTEN\s*=\s*([\d\.]+)\s*eV',
                 repeats=False, dtype=float),
             Quantity(
                 'energy_entropy0', r'energy without entropy\s*=\s*([\d\.]+)',
@@ -118,17 +118,21 @@ class OutcarParser(TextParser):
                     r'Iteration\s*\d+\(\s*\d+\)([\s\S]+?energy\(sigma\->0\)\s*=\s*[\d\.]+)',
                     repeats=True, sub_parser=TextParser(quantities=scf_iteration)),
                 Quantity(
-                    'total_energy',
-                    r'FREE ENERGIE[\s\S]+?free\s*energy\s*TOTEN\s*=\s*([\d\.]+)',
-                    repeats=False, dtype=float),
-                Quantity(
-                    'energy_entropy0',
-                    r'FREE ENERGIE[\s\S]+?energy\s*without\s*entropy\s*=\s*([\d\.]+)',
-                    repeats=False, dtype=float),
-                Quantity(
-                    'energy_T0',
-                    r'FREE ENERGIE[\s\S]+?energy\(sigma\->0\)\s*=\s*([\d\.]+)',
-                    repeats=False, dtype=float),
+                    'energies',
+                    r'FREE ENERGIE OF THE ION-ELECTRON SYSTEM \(eV\)\s*\-+\s*([\s\S]+?)\-{10}',
+                    sub_parser=TextParser(quantities=[
+                        Quantity(
+                            'energy_total',
+                            r'free\s*energy\s*TOTEN\s*=\s*([\-\d\.]+)',
+                            repeats=False, dtype=float),
+                        Quantity(
+                            'energy_entropy0',
+                            r'energy\s*without\s*entropy\s*=\s*([\-\d\.]+)',
+                            repeats=False, dtype=float),
+                        Quantity(
+                            'energy_T0',
+                            r'energy\(sigma\->0\)\s*=\s*([\-\d\.]+)',
+                            repeats=False, dtype=float)])),
                 Quantity(
                     'stress',
                     r'in kB\s*(\-?\d+\.\d+)\s*(\-?\d+\.\d+)\s*(\-?\d+\.\d+)\s*'
@@ -327,6 +331,7 @@ class VASPXml(Parser):
         if self._incar is None:
             self._incar = dict(incar=None, incar_out=None)
         incar = self._get_key_values('incar/i')
+        incar.update(self._get_key_values('incar/v'))
         self._fix_incar(incar)
         self._incar['incar'] = incar
         return incar
@@ -706,14 +711,18 @@ class VASPOutcar(Parser):
 
     def get_energies(self, n_calc, n_scf):
         energies = dict()
+        multiplier = 1.0
         if n_scf is None:
             section = self.parser.get(
-                'calculation', [{}] * (n_calc + 1))[n_calc]
+                'calculation', [{}] * (n_calc + 1))[n_calc].get('energies', {})
+            # final energies are per-atom
+            multiplier = self.atom_info.get(
+                'n_atoms', len(self.get_structure(n_calc).get('positions')))
         else:
             section = self.parser.get('calculation', [{}] * (
                 n_calc + 1))[n_calc].get('scf_iteration', [{}] * (n_scf + 1))[n_scf]
-        for key in ['total_energy', 'energy_T0', 'energy_entropy0']:
-            energies[key] = section.get(key)
+        for key in ['energy_total', 'energy_T0', 'energy_entropy0']:
+            energies[key] = section.get(key) * multiplier
 
         energies.update(section.get('energy_components', {}))
         return energies
@@ -882,7 +891,7 @@ class VASPParser(FairdiParser):
         sec_basis_set_cell_dependent = self.archive.section_run[-1].m_create(
             BasisSetCellDependent)
         sec_basis_set_cell_dependent.basis_set_planewave_cutoff = pint.Quantity(
-            self.parser.incar.get('ENMAX', 0.0) * prec, 'eV')
+            self.parser.incar.get('ENMAX', self.parser.incar.get('ENCUT', 0.0)) * prec, 'eV')
 
         sec_method_basis_set = sec_method.m_create(MethodBasisSet)
         sec_method_basis_set.mapping_section_method_basis_set_cell_associated = sec_basis_set_cell_dependent
@@ -1021,7 +1030,7 @@ class VASPParser(FairdiParser):
             sec_scc.energy_reference_lowest_unoccupied = pint.Quantity(conduction_min, 'eV')
 
             if self.parser.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
-                # I removed normalization since it imho it should be done by normalizer
+                # I removed normalization since imho it should be done by normalizer
                 sec_k_band = sec_scc.m_create(KBand)
                 divisions = int(self.parser.kpoints_info.get('divisions', None))
                 kpoints = self.parser.kpoints_info.get('k_mesh_points', [])

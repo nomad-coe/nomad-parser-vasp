@@ -1,8 +1,7 @@
 #
 # Copyright The NOMAD Authors.
 #
-# This file is part of NOMAD.
-# See https://nomad-lab.eu for further info.
+# This file is part of NOMAD. See https://nomad-lab.eu for further info.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,15 +22,12 @@ from setuptools import setup, find_packages
 def main():
     setup(
         name='vaspparser',
-        version='0.1',
+        version='1.0',
         description='NOMAD parser implementation for VASP.',
-        author='Fawzi Mohamed, Lauri Himanen, Danio Brambila, Ankit Kariryaa, Henning Glawe',
+        author='The NOMAD Authors',
         license='APACHE 2.0',
-        packages=find_packages(exclude=['test']),
-        install_requires=[
-            'nomadcore'
-        ],
-    )
+        packages=find_packages(exclude=['tests']),
+        install_requires=['nomad-lab'])
 
 
 if __name__ == '__main__':
