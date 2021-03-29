@@ -23,10 +23,11 @@ import pint
 from datetime import datetime
 import ase
 import re
+from xml.etree import ElementTree
 
 from .metainfo import m_env
 from nomad.parsing import FairdiParser
-from nomad.parsing.file_parser.xml_parser import XMLParser
+from nomad.parsing.file_parser import FileParser
 from nomad.parsing.file_parser.text_parser import TextParser, Quantity
 from nomad.datamodel.metainfo.common_dft import Run, Method, XCFunctionals,\
     SingleConfigurationCalculation, ScfIteration, MethodAtomKind, System, Eigenvalues,\
@@ -59,6 +60,107 @@ def get_key_values(val_in):
             vi = vi == 'T' if vi in ['T', 'F'] else vi
             data[resi[0]] = convert(vi)
     return data
+
+
+class XMLParser(ElementTree.XMLParser):
+
+    rx = re.compile("&#([0-9]+);|&#x([0-9a-fA-F]+);")
+
+    def feed(self, data):
+        m = self.rx.search(data)
+        if m is not None:
+            target = m.group(1)
+            if target:
+                num = int(target)
+            else:
+                num = int(m.group(2), 16)
+            if not(num in (0x9, 0xA, 0xD) or 0x20 <= num <= 0xD7FF or 0xE000 <= num <= 0xFFFD or 0x10000 <= num <= 0x10FFFF):
+                # is invalid xml character, cut it out of the stream
+                mstart, mend = m.span()
+                mydata = data[:mstart] + data[mend:]
+        else:
+            mydata = data
+        super(XMLParser, self).feed(mydata)
+
+
+class VASPXMLParser(FileParser):
+    def __init__(self):
+        super().__init__()
+
+    def init_parameters(self):
+        self._path = ''
+        self._data = []
+        self._calculation_markers = []
+        self._index = 0
+        self._indices = []
+        self._tag = ''
+
+    @property
+    def tree(self):
+        if self._file_handler is None:
+            self._file_handler = ElementTree.iterparse(
+                self.mainfile_obj, events=['start', 'end'])
+        return self._file_handler
+
+    @property
+    def n_calculations(self):
+        if self._calculation_markers == 0:
+            self.parse(None)
+        return len(self._calculation_markers)
+
+    def parse(self, key):
+        if self._results is None:
+            self._results = dict()
+
+        while True:
+            try:
+                event, element = next(self.tree)
+            except StopIteration:
+                break
+            except Exception:
+                continue
+
+            tag, text, attrib = element.tag, element.text, element.attrib
+            name = attrib.get('name', '')
+            if not name and tag in ('i', 'v', 'r', 'c'):
+                if event == 'start':
+                    continue
+                self._data.append({tag: text, **attrib})
+            elif event == 'start':
+                self._indices.append(0)
+                if tag != self._tag:
+                    self._index = 0
+
+                if name:
+                    # mimic an xpath style query
+                    self._path = '%s/%s[@name="%s"]' % (self._path, tag, name)
+                else:
+                    self._path = '%s/%s[%d]' % (self._path, tag, self._index)
+                    self._indices[-1] += (self._index + 1)
+
+                data = {}
+                if text:
+                    data.update({tag: text})
+                if attrib:
+                    data.update(attrib)
+                if data:
+                    self._data.append(data)
+                if tag == 'calculation':
+                    self._calculation_markers.append([len(self._results)])
+                self._tag = tag
+
+            else:
+                self._results[self._path] = self._data
+                done = self._path == key
+                self._data = []
+                self._path = self._path.rsplit('/', 1)[0]
+                if self._indices:
+                    self._index = self._indices.pop(-1)
+                self._tag = tag
+                if tag == 'calculation':
+                    self._calculation_markers[-1].append(len(self._results))
+                if done:
+                    break
 
 
 class OutcarParser(TextParser):
@@ -268,57 +370,105 @@ class Parser:
         return val
 
 
+def convert(val, dtype):
+    if isinstance(val, list):
+        return [convert(v, dtype) for v in val]
+    else:
+        try:
+            return dtype(val)
+        except Exception:
+            return val
+
+
 class VASPXml(Parser):
     def __init__(self):
         super().__init__()
-        self.parser = XMLParser()
+        self.parser = VASPXMLParser()
+        self._re_attrib = re.compile(r'\[@name="(\w+)"\]')
+        self._dtypes = {'string': str, 'int': int, 'logical': bool, '': float, 'float': float}
 
-    def _get_key_values(self, path, root=None):
-        if self.parser.root is None:
+    def init_parser(self, filepath, logger):
+        super().init_parser(filepath, logger)
+        self._result_keys = None
+        self._scf_energies = dict()
+        self._n_scf = None
+        # we perform full parsing
+        self.parser.parse('')
+        self._result_keys = list(self.parser._results.keys())
+
+    def _get_key_values(self, path, repeats=False, array=False, calc_index=-1):
+        root, base_name = path.rsplit('/', 1)
+
+        attrib = re.search(self._re_attrib, base_name)
+        if attrib:
+            attrib = attrib.group(1)
+            base_name = re.sub(self._re_attrib, '', base_name)
+
+        sections = []
+        for section in root.split('/'):
+            if not section.endswith(']'):
+                break
+            sections.append(section)
+        root = '/'.join(sections) if sections else root
+
+        if calc_index < 0:
+            lookup_range = [0, len(self._result_keys)]
+        else:
+            lookup_range = self.parser._calculation_markers[calc_index]
+            if len(lookup_range) != 2:
+                if len(lookup_range) == 1:
+                    lookup_range.append(len(self._result_keys))
+                else:
+                    lookup_range = [0, len(self._result_keys)]
+                self.parser.logger.error('Incomplete calculation.')
+
+        data = []
+        for key in self._result_keys[lookup_range[0]: lookup_range[1]]:
+            if key.find(root) == 0:
+                data.extend([
+                    (d.get(base_name), d.get('name', ''), d.get(
+                        'type', '')) for d in self.parser._results[key]])
+            elif len(data) > 0:
+                # we assume that results are neighbors
+                break
+        if len(data) == 0:
             return dict()
 
-        dtypes = {'string': str, 'int': int, 'logical': bool, '': float}
-
-        def convert(val, dtype):
-            if isinstance(val, list):
-                return [convert(v, dtype) for v in val]
-            else:
-                return dtype(val)
-
-        root = self.parser if root is None else root
-        elements = root.root.findall(os.path.join('./', path))
-
-        names, values = [], []
-        for element in elements:
-            name = element.attrib.get('name', None)
-            if name is None:
-                continue
-            dtype = dtypes.get(element.attrib.get('type', ''), str)
-
-            value = element.text if element.text else ''
-            value = value.split() if dtype != str else value.strip()
-            value = value[0] if len(value) == 1 else value
-            array = isinstance(value, list) or path.endswith('/v/')
-
-            if dtype == bool:
-                value = [v == 'T' for v in value] if array else value == 'T'
-            if dtype == float:
-                # prevent nan printouts
-                if array:
+        result = dict()
+        if array:
+            value = [d[0].split() for d in data if d[0]]
+            value = [d[0] if len(d) == 1 and not repeats else d for d in value]
+            dtype = data[0][2]
+            result[base_name] = np.array(value, dtype=self._dtypes.get(dtype, float))
+        else:
+            for value, name, dtype in data:
+                if not value:
+                    continue
+                if attrib and name != attrib:
+                    continue
+                name = name if name else base_name
+                dtype = self._dtypes.get(dtype, str)
+                value = value.split()
+                if dtype == bool:
+                    value = [v == 'T' for v in value]
+                if dtype == float:
+                    # prevent nan printouts
                     value = ['nan' if '*' in v else v for v in value]
-                else:
-                    value = 'nan' if '*' in value else value
-            # using numpy array does not work
-            value = convert(value, dtype)
-            names.append(name)
-            values.append(value)
+                # using numpy array does not work
+                value = convert(value, dtype)
+                value = value[0] if len(value) == 1 else value
+                result.setdefault(name, [])
+                result[name].append(value)
+            if not repeats:
+                for key, val in result.items():
+                    result[key] = val[0] if len(val) == 1 else val
 
-        return dict(zip(names, values))
+        return result
 
     @property
     def header(self):
         if self._header is None:
-            self._header = self._get_key_values('generator/i')
+            self._header = self._get_key_values('/modeling[0]/generator[0]/i')
             for key, val in self._header.items():
                 if not isinstance(val, str):
                     self._header[key] = ' '.join(val)
@@ -330,8 +480,8 @@ class VASPXml(Parser):
 
         if self._incar is None:
             self._incar = dict(incar=None, incar_out=None)
-        incar = self._get_key_values('incar/i')
-        incar.update(self._get_key_values('incar/v'))
+        incar = self._get_key_values('/modeling[0]/incar[0]/i')
+        incar.update(self._get_key_values('/modeling[0]/incar[0]/v'))
         self._fix_incar(incar)
         self._incar['incar'] = incar
         return incar
@@ -343,64 +493,58 @@ class VASPXml(Parser):
         incar = dict()
         if self._incar is None:
             self._incar = dict(incar=None, incar_out=None)
-        for tag in ['i', 'v']:
-            incar.update(self._get_key_values('parameters//%s' % tag))
+        incar.update(self._get_key_values('/modeling[0]/parameters[0]/i'))
+        incar.update(self._get_key_values('/modeling[0]/parameters[0]/v'))
 
         self._incar['incar_out'] = incar
         self._fix_incar(incar)
         return incar
 
     @property
-    def calculations(self):
-        if self._calculations is None:
-            self._calculations = self.parser.root.findall('calculation')
-            self._calculation_parsers = [
-                XMLParser(mainfile=self.parser.mainfile, logger=self.parser.logger)
-                for _ in self._calculations]
-            for n in range(len(self._calculation_parsers)):
-                self._calculation_parsers[n]._file_handler = self._calculations[n]
-        return self._calculations
-
-    @property
     def n_calculations(self):
-        if isinstance(self.calculations, dict):
-            n_calcs = 1
-        elif isinstance(self.calculations, list):
-            n_calcs = len(self.calculations)
-        else:
-            n_calcs = 0
-
-        return n_calcs
+        return self.parser.n_calculations
 
     @property
     def kpoints_info(self):
         if self._kpoints_info is None:
             self._kpoints_info = dict()
-            self._kpoints_info['x_vasp_k_points_generation_method'] = self.parser.get(
-                'kpoints[1]/generation/param')
-            self._kpoints_info['k_mesh_points'] = self.parser.get(
-                'kpoints[1]/varray/[@name="kpointlist"]/v')
-            self._kpoints_info['k_mesh_weights'] = self.parser.get(
-                'kpoints[1]/varray/[@name="weights"]/v')
-            self._kpoints_info['x_vasp_tetrahedrons_list'] = self.parser.get(
-                'kpoints[1]/varray/[@name="tetrahedronlist"]/v')
-            self._kpoints_info['divisions'] = self.parser.get(
-                'kpoints[1]/generation/i/[@name="divisions"]')
-            self._kpoints_info['points'] = self.parser.get('kpoints[1]/generation/v')
-            volumeweight = self.parser.get('kpoints[1]/i/[@name="volumeweight"]')
-            if volumeweight is not None:
-                volumeweight = pint.Quantity(volumeweight, 'angstrom ** 3').to('m**3')
+            # initialize parsing of k_points
+            method = self._get_key_values(
+                '/modeling[0]/kpoints[0]/generation[0]/param')
+            if method:
+                self._kpoints_info['x_vasp_k_points_generation_method'] = method['param']
+            divisions = self._get_key_values(
+                '/modeling[0]/kpoints[0]/generation[0]/i[@name="divisions"]')
+            if divisions:
+                self._kpoints_info['divisions'] = divisions['divisions']
+            volumeweight = self._get_key_values('/modeling[0]/kpoints[0]/generation[0]/i[@name="volumeweight"]')
+            if volumeweight:
+                volumeweight = pint.Quantity(volumeweight['volumeweight'], 'angstrom ** 3').to('m**3')
                 # TODO set propert unit in metainfo
                 self._kpoints_info['x_vasp_tetrahedron_volume'] = volumeweight.magnitude
+            points = self._get_key_values(
+                '/modeling[0]/kpoints[0]/varray[@name="kpointlist"]/v', array=True)
+            if points:
+                self._kpoints_info['k_mesh_points'] = points['v']
+            weights = self._get_key_values(
+                '/modeling[0]/kpoints[0]/varray[@name="weights"]/v', array=True)
+            if weights:
+                self._kpoints_info['k_mesh_weights'] = weights['v']
+            tetrahedrons = self._get_key_values(
+                '/modeling[0]/kpoints[0]/varray[@name="tetrahedronlist"]/v', array=True)
+            if tetrahedrons:
+                self._kpoints_info['x_vasp_tetrahedrons_list'] = tetrahedrons['v']
         return self._kpoints_info
 
     @property
     def n_bands(self):
         if self._n_bands is None:
-            for n in range(0, len(self._calculation_parsers)):
-                val = self._calculation_parsers[n].get('eigenvalues/array/set[1]/set[1]/set[1]/r')
-                if val is not None:
-                    self._n_bands = len(val)
+            for n in range(self.n_calculations - 1, -1, -1):
+                val = self._get_key_values(
+                    '/modeling[0]/calculation[%d]/eigenvalues[0]/array[0]/set[0]/set[0]/set[0]/r' % n,
+                    calc_index=n)
+                if val:
+                    self._n_bands = len(val['r'])
                     break
             if self._n_bands is None:
                 self._n_bands = self.incar.get('NBANDS', 0)
@@ -409,10 +553,12 @@ class VASPXml(Parser):
     @property
     def n_dos(self):
         if self._n_dos is None:
-            for n in range(0, len(self._calculation_parsers)):
-                val = self._calculation_parsers[n].get('dos/total/array/set[1]/set[1]/r')
-                if val is not None:
-                    self._n_dos = len(val)
+            for n in range(self.n_calculations - 1, -1, -1):
+                val = self._get_key_values(
+                    '/modeling[0]/calculation[%d]/dos[0]/total[0]/array[0]/set[0]/set[0]/r' % n,
+                    calc_index=n)
+                if val:
+                    self._n_dos = len(val['r'])
                     break
             if self._n_dos is None:
                 self._n_dos = self._incar.get('NEDOS', 0)
@@ -422,37 +568,54 @@ class VASPXml(Parser):
     def atom_info(self):
         if self._atom_info is None:
             self._atom_info = {}
-            self._atom_info['n_atoms'] = self.parser.get('atominfo/atoms')
-            self._atom_info['n_types'] = self.parser.get('atominfo/types')
+            root = '/modeling[0]/atominfo[0]'
+            self._atom_info['n_atoms'] = int(self._get_key_values(
+                rf'{root}/atoms[0]/atoms').get('atoms', 0))
+            self._atom_info['n_types'] = int(self._get_key_values(
+                rf'{root}/types[0]/types').get('types', 0))
 
-            array_keys = [
-                e.get('name', None) for e in self.parser.get('atominfo/array/', [])]
-            for key in array_keys:
+            number = dict(atoms=self._atom_info['n_atoms'], atomtypes=self._atom_info['n_types'])
+            for key in ['atoms', 'atomtypes']:
+                rcs = self._get_key_values(
+                    rf'{root}/array[@name="%s"]/set[0]/c' % key).get('c', [])
+                fields = self._get_key_values(
+                    rf'{root}/array[@name="%s"]/field' % key).get('field', [])
                 array_info = {}
-                fields = self.parser.get('atominfo/array/[@name="%s"]/field' % key)
-                rcs = self.parser.get('atominfo/array/[@name="%s"]/set/rc/' % key, 1)
-                for n in range(max(len(rcs), 1)):
-                    val = self.parser.get(
-                        'atominfo/array/[@name="%s"]/set/rc[%d]/c' % (key, n + 1))
+                for n in range(number[key]):
                     for i in range(len(fields)):
                         array_info.setdefault(fields[i], [])
-                        array_info[fields[i]].append(val[i])
+                        array_info[fields[i]].append(rcs[n * len(fields) + i])
                 self._atom_info[key] = array_info
         return self._atom_info
 
     def get_n_scf(self, n_calc):
-        return len(self._calculation_parsers[n_calc].get('scstep/', []))
+        if self._n_scf is None:
+            self._n_scf = [None] * self.n_calculations
+        if self._n_scf[n_calc] is None:
+            self._n_scf[n_calc] = len(self._get_key_values(
+                '/modeling[0]/calculation[%d]/scstep/time[@name="total"]' % n_calc,
+                calc_index=n_calc).get('total', []))
+        return self._n_scf[n_calc]
 
     def get_structure(self, n_calc):
-        calculation = self._calculation_parsers[n_calc]
-        cell = calculation.get('structure[1]/crystal/varray[@name="basis"]/v')
+        structure = '/modeling[0]/calculation[%d]/structure[0]' % n_calc
+        cell = self._get_key_values(
+            rf'{structure}/crystal[0]/varray[@name="basis"]/v', array=True,
+            calc_index=n_calc).get('v', None)
         if cell is None:
-            calculation = self.parser
-            cell = calculation.get('structure[1]/crystal/varray[@name="basis"]/v')
+            structure = '/modeling[0]/structure[@name="finalpos"]'
+            cell = self._get_key_values(
+                rf'{structure}/crystal[0]/varray[@name="basis"]/v', array=True,
+                calc_index=n_calc).get('v', None)
 
-        positions = calculation.get('structure[1]/varray/[@name="positions"]/v')
-        selective = calculation.get('structure[1]/varray/[@name="selective"]/v')
-        nose = calculation.get('structure[1]/nose/v')
+        positions = self._get_key_values(
+            rf'{structure}/varray[@name="positions"]/v', array=True,
+            calc_index=n_calc).get('v', None)
+        selective = self._get_key_values(
+            rf'{structure}/varray[@name="selective"]/v', array=True,
+            calc_index=n_calc).get('v', None)
+        nose = self._get_key_values(
+            rf'{structure}/nose/v', array=True, calc_index=n_calc).get('v', None)
 
         if positions is not None:
             positions = pint.Quantity(np.dot(positions, cell), 'angstrom')
@@ -462,26 +625,40 @@ class VASPXml(Parser):
         return dict(cell=cell, positions=positions, selective=selective, nose=nose)
 
     def get_energies(self, n_calc, n_scf):
+        calculation = '/modeling[0]/calculation[%d]' % n_calc
         if n_scf is None:
-            return self._get_key_values('energy/i', self._calculation_parsers[n_calc])
+            # we need to cache this separately for faster access
+            self._scf_energies = self._get_key_values(
+                rf'{calculation}/scstep/i', repeats=True, calc_index=n_calc)
+            return self._get_key_values(rf'{calculation}/energy[0]/i', calc_index=n_calc)
         else:
-            return self._get_key_values('scstep[%d]/energy/i' % (n_scf + 1), self._calculation_parsers[n_calc])
+            scf_energies = dict()
+            for key, val in self._scf_energies.items():
+                try:
+                    scf_energies[key] = val[n_scf]
+                except Exception:
+                    scf_energies[key] = val[-1] if n_scf == self.get_n_scf(n_calc) - 1 else None
+            return scf_energies
 
     def get_forces_stress(self, n_calc):
-        forces = self._calculation_parsers[n_calc].get('varray/[@name="forces"]/v')
-        stress = self._calculation_parsers[n_calc].get('varray/[@name="stress"]/v')
+        forces = self._get_key_values(
+            '/modeling[0]/calculation[%d]/varray[@name="forces"]/v' % n_calc,
+            array=True, calc_index=n_calc).get('v', None)
+        stress = self._get_key_values(
+            '/modeling[0]/calculation[%d]/varray[@name="stress"]/v' % n_calc,
+            array=True, calc_index=n_calc).get('v', None)
         return forces, stress
 
     def get_eigenvalues(self, n_calc):
         n_kpts = len(self.kpoints_info.get('k_mesh_points', []))
-        eigenvalues = self._calculation_parsers[n_calc].root.findall('eigenvalues/array/set//r')
-        if not eigenvalues:
+        root = '/modeling[0]/calculation[%s]/eigenvalues[0]/array[0]/set[0]' % n_calc
+        eigenvalues = self._get_key_values(
+            rf'{root}/r', array=True, calc_index=n_calc).get('r', None)
+        if eigenvalues is None:
             return
 
         try:
-            eigenvalues = np.array([e.text.split() for e in eigenvalues], dtype=float)
-            eigenvalues = np.reshape(eigenvalues, (
-                len(eigenvalues) // (n_kpts * self.n_bands), n_kpts, self.n_bands, 2))
+            eigenvalues = np.reshape(eigenvalues, (self.ispin, n_kpts, self.n_bands, 2))
         except Exception:
             self.parser.logger.error('Error reading eigenvalues')
             return
@@ -491,12 +668,16 @@ class VASPXml(Parser):
     def get_total_dos(self, n_calc):
         dos_energies = dos_values = dos_integrated = e_fermi = None
 
-        dos = self._calculation_parsers[n_calc].root.findall('dos/total/array/set//r')
-        if not dos:
+        root = '/modeling[0]/calculation[%d]/dos[0]' % n_calc
+        dos = self._get_key_values(
+            rf'{root}/total[0]/array[0]/set[0]/set/r', array=True,
+            calc_index=n_calc).get('r', None)
+
+        if dos is None:
             return dos_energies, dos_values, dos_integrated, e_fermi
+
         try:
-            dos = np.array([e.text.split() for e in dos], dtype=float)
-            dos = np.reshape(dos, (len(dos) // self.n_dos, self.n_dos, 3))
+            dos = np.reshape(dos, (self.ispin, len(dos) // self.ispin, 3))
         except Exception:
             self.parser.logger.error('Error reading total dos.')
             return dos_energies, dos_values, dos_integrated, e_fermi
@@ -511,21 +692,24 @@ class VASPXml(Parser):
         volume = np.abs(np.linalg.det(cell.to('m').magnitude))
         dos_values *= volume
 
-        e_fermi = self._calculation_parsers[n_calc].get('dos/i/[@name="efermi"]', 0.0)
+        e_fermi = self._get_key_values(
+            rf'{root}/i[@name="efermi"]', calc_index=n_calc).get('efermi', 0.0)
 
         return dos_energies, dos_values, dos_integrated, e_fermi
 
     def get_partial_dos(self, n_calc):
         n_atoms = self.atom_info['n_atoms']
-        dos = self._calculation_parsers[n_calc].root.findall('dos/partial/array/set//r')
-        if not dos:
+        root = '/modeling[0]/calculation[%d]/dos[0]/partial[0]/array[0]' % n_calc
+
+        dos = self._get_key_values(rf'{root}/r', calc_index=n_calc).get('r', None)
+
+        if dos is None:
             return None, None
 
         # TODO use atomprojecteddos section
-        fields = self._calculation_parsers[n_calc].get('dos/partial/array/field')
+        fields = self._get_key_values(rf'{root}/field', calc_index=n_calc).get('field', [])
         try:
-            dos = np.array([e.text.split() for e in dos], dtype=float)
-            dos = np.reshape(dos, (n_atoms, self.ispin, self.n_dos, len(fields)))
+            dos = np.reshape(dos, (n_atoms, self.ispin, len(dos) // (n_atoms * self.ispin), len(fields)))
         except Exception:
             self.parser.logger.error('Error reading partial dos.')
             return None, None
@@ -1032,7 +1216,9 @@ class VASPParser(FairdiParser):
             if self.parser.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
                 # I removed normalization since imho it should be done by normalizer
                 sec_k_band = sec_scc.m_create(KBand)
-                divisions = int(self.parser.kpoints_info.get('divisions', None))
+                divisions = self.parser.kpoints_info.get('divisions', None)
+                if divisions is None:
+                    return
                 kpoints = self.parser.kpoints_info.get('k_mesh_points', [])
                 n_segments = len(kpoints) // divisions
                 kpoints = np.reshape(kpoints, (n_segments, divisions, 3))
