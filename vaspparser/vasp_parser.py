@@ -112,6 +112,9 @@ class VASPXMLParser(FileParser):
         if self._results is None:
             self._results = dict()
 
+        if self.tree is None:
+            return
+
         while True:
             try:
                 event, element = next(self.tree)
@@ -138,6 +141,11 @@ class VASPXMLParser(FileParser):
                     self._path = '%s/%s[%d]' % (self._path, tag, self._index)
                     self._indices[-1] += (self._index + 1)
 
+                if tag == 'calculation':
+                    self._calculation_markers.append([len(self._results)])
+                self._tag = tag
+
+            else:
                 data = {}
                 if text:
                     data.update({tag: text})
@@ -145,12 +153,9 @@ class VASPXMLParser(FileParser):
                     data.update(attrib)
                 if data:
                     self._data.append(data)
-                if tag == 'calculation':
-                    self._calculation_markers.append([len(self._results)])
-                self._tag = tag
 
-            else:
                 self._results[self._path] = self._data
+
                 done = self._path == key
                 self._data = []
                 self._path = self._path.rsplit('/', 1)[0]
@@ -577,9 +582,9 @@ class VASPXml(Parser):
             number = dict(atoms=self._atom_info['n_atoms'], atomtypes=self._atom_info['n_types'])
             for key in ['atoms', 'atomtypes']:
                 rcs = self._get_key_values(
-                    rf'{root}/array[@name="%s"]/set[0]/c' % key).get('c', [])
+                    rf'{root}/array[@name="%s"]/set[0]/c' % key, repeats=True).get('c', [])
                 fields = self._get_key_values(
-                    rf'{root}/array[@name="%s"]/field' % key).get('field', [])
+                    rf'{root}/array[@name="%s"]/field' % key, repeats=True).get('field', [])
                 array_info = {}
                 for n in range(number[key]):
                     for i in range(len(fields)):
