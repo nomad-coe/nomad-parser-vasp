@@ -132,3 +132,8 @@ def test_outcar(parser):
     assert len(sec_dos.dos_lm) == 16
     assert pytest.approx(sec_dos.dos_values_lm[5][0][0][-15], 1.51481425e+17)
     assert pytest.approx(sec_dos.dos_values_lm[2][0][1][-16], 1.71267009e+16)
+
+
+def test_broken_xml(parser):
+    archive = EntryArchive()
+    parser.parse('tests/data/vasprun.xml.broken', archive, None)
