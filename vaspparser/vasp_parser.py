@@ -696,7 +696,7 @@ class RunXmlContentHandler(ContentHandler):
         try:
             data = self._data
             segments = key.strip('/').split('/')
-            for i, segment in enumerate(segments):
+            for segment in segments:
                 data = data[segment]
 
             return self._combine_sub_tree(data, [])
@@ -715,7 +715,7 @@ class RunFileParser(FileParser):
         except Exception as e:
             # support broken XML structure
             if self.logger:
-                self.logger.warn('could not parse xml', exc_info=e)
+                self.logger.error('could not parse all xml', exc_info=e)
             content_handler.clear_stack()
 
         self._results = content_handler
@@ -732,12 +732,15 @@ class RunFileParser(FileParser):
 class RunContentParser(ContentParser):
     def __init__(self):
         super().__init__()
-        self.parser = RunFileParser()
+        self.parser = None
         self._re_attrib = re.compile(r'\[@name="(\w+)"\]')
         self._dtypes = {'string': str, 'int': int, 'logical': bool, '': float, 'float': float}
 
     def init_parser(self, filepath, logger):
+        self.parser = RunFileParser(filepath, logger)
+
         super().init_parser(filepath, logger)
+
         self._scf_energies = dict()
         self._n_scf = None
 
