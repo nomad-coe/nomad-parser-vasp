@@ -1200,12 +1200,12 @@ class VASPParser(FairdiParser):
 
             energies = self.parser.get_energies(n_calc, n_scf)
             for key, val in energies.items():
-                if val is None:
-                    continue
-                val = pint.Quantity(val, 'eV')
                 metainfo_key = self.parser.metainfo_mapping.get(key, None)
-                if metainfo_key is None:
+                if val is None or metainfo_key is None:
                     continue
+
+                val = pint.Quantity(val, 'eV')
+
                 try:
                     setattr(section, '%s%s' % (metainfo_key, ext), val)
                 except Exception:
