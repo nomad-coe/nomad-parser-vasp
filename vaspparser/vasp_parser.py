@@ -478,7 +478,9 @@ class OutcarContentParser(ContentParser):
             section = self.parser.get('calculation', [{}] * (
                 n_calc + 1))[n_calc].get('scf_iteration', [{}] * (n_scf + 1))[n_scf]
         for key in ['energy_total', 'energy_T0', 'energy_entropy0']:
-            energies[key] = section.get(key) * multiplier
+            val = section.get(key)
+            if val is not None:
+                energies[key] = val * multiplier
 
         energies.update(section.get('energy_components', {}))
         return energies
