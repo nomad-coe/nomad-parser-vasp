@@ -29,6 +29,7 @@ respective file format. They both use separate file (:class:`RunFileParser`) and
 (:class:`OutcarTextParser`) parsers to read content content from either xml or text files.
 '''
 
+from typing import List
 import os
 import numpy as np
 import logging
@@ -477,7 +478,9 @@ class OutcarContentParser(ContentParser):
             section = self.parser.get('calculation', [{}] * (
                 n_calc + 1))[n_calc].get('scf_iteration', [{}] * (n_scf + 1))[n_scf]
         for key in ['energy_total', 'energy_T0', 'energy_entropy0']:
-            energies[key] = section.get(key) * multiplier
+            val = section.get(key)
+            if val is not None:
+                energies[key] = val * multiplier
 
         energies.update(section.get('energy_components', {}))
         return energies
@@ -715,7 +718,7 @@ class RunFileParser(FileParser):
         except Exception as e:
             # support broken XML structure
             if self.logger:
-                self.logger.error('could not parse all xml', exc_info=e)
+                self.logger.warning('could not parse all xml', exc_info=e)
             content_handler.clear_stack()
 
         self._results = content_handler
@@ -747,6 +750,11 @@ class RunContentParser(ContentParser):
         self.parser.parse()
 
     def _get_key_values(self, path, repeats=False, array=False):
+        def parse_float_str_vector(str_vector: List[str]):
+            return [
+                'nan' if '*' in x else x
+                for x in str_vector]
+
         root, base_name = path.strip('/').rsplit('/', 1)
 
         attrib = re.search(self._re_attrib, base_name)
@@ -772,7 +780,9 @@ class RunContentParser(ContentParser):
 
         result = dict()
         if array:
-            value = [d[0].split() for d in data if d[0]]
+            value = [
+                parse_float_str_vector(item[0].split())
+                for item in data if item[0]]
             value = [d[0] if len(d) == 1 and not repeats else d for d in value]
             dtype = data[0][2]
             result[base_name] = np.array(value, dtype=self._dtypes.get(dtype, float))
@@ -790,7 +800,7 @@ class RunContentParser(ContentParser):
                     value = [v == 'T' for v in value]
                 if dtype == float:
                     # prevent nan printouts
-                    value = ['nan' if '*' in v else v for v in value]
+                    value = parse_float_str_vector(value)
                 # using numpy array does not work
                 value = convert(value, dtype)
                 value = value[0] if len(value) == 1 else value
@@ -1192,12 +1202,12 @@ class VASPParser(FairdiParser):
 
             energies = self.parser.get_energies(n_calc, n_scf)
             for key, val in energies.items():
-                if val is None:
-                    continue
-                val = pint.Quantity(val, 'eV')
                 metainfo_key = self.parser.metainfo_mapping.get(key, None)
-                if metainfo_key is None:
+                if val is None or metainfo_key is None:
                     continue
+
+                val = pint.Quantity(val, 'eV')
+
                 try:
                     setattr(section, '%s%s' % (metainfo_key, ext), val)
                 except Exception:
