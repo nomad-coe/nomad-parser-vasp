@@ -54,3 +54,6 @@ env/
 
 # Setuptools install folder
 vaspparser.egg-info/
+.mypy_cache
+.pytest_cache
+__pycache__/
