@@ -716,7 +716,7 @@ class RunFileParser(FileParser):
         except Exception as e:
             # support broken XML structure
             if self.logger:
-                self.logger.error('could not parse all xml', exc_info=e)
+                self.logger.warning('could not parse all xml', exc_info=e)
             content_handler.clear_stack()
 
         self._results = content_handler
