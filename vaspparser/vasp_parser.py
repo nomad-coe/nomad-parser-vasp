@@ -29,6 +29,7 @@ respective file format. They both use separate file (:class:`RunFileParser`) and
 (:class:`OutcarTextParser`) parsers to read content content from either xml or text files.
 '''
 
+from typing import List
 import os
 import numpy as np
 import logging
@@ -747,6 +748,11 @@ class RunContentParser(ContentParser):
         self.parser.parse()
 
     def _get_key_values(self, path, repeats=False, array=False):
+        def parse_float_str_vector(str_vector: List[str]):
+            return [
+                'nan' if '*' in x else x
+                for x in str_vector]
+
         root, base_name = path.strip('/').rsplit('/', 1)
 
         attrib = re.search(self._re_attrib, base_name)
@@ -772,7 +778,9 @@ class RunContentParser(ContentParser):
 
         result = dict()
         if array:
-            value = [d[0].split() for d in data if d[0]]
+            value = [
+                parse_float_str_vector(item[0].split())
+                for item in data if item[0]]
             value = [d[0] if len(d) == 1 and not repeats else d for d in value]
             dtype = data[0][2]
             result[base_name] = np.array(value, dtype=self._dtypes.get(dtype, float))
@@ -790,7 +798,7 @@ class RunContentParser(ContentParser):
                     value = [v == 'T' for v in value]
                 if dtype == float:
                     # prevent nan printouts
-                    value = ['nan' if '*' in v else v for v in value]
+                    value = parse_float_str_vector(value)
                 # using numpy array does not work
                 value = convert(value, dtype)
                 value = value[0] if len(value) == 1 else value
