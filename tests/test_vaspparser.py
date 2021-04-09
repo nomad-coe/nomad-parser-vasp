@@ -20,6 +20,7 @@ import pytest
 import pint
 import numpy as np
 
+from nomad.units import ureg
 from nomad.datamodel import EntryArchive
 from vaspparser.vasp_parser import VASPParser
 
@@ -27,6 +28,20 @@ from vaspparser.vasp_parser import VASPParser
 @pytest.fixture(scope='module')
 def parser():
     return VASPParser()
+
+
+@pytest.fixture(scope='module')
+def silicon_dos(parser):
+    archive = EntryArchive()
+    parser.parse('tests/data/dos_si.xml', archive, None)
+    return archive
+
+
+@pytest.fixture(scope='module')
+def silicon_band(parser):
+    archive = EntryArchive()
+    parser.parse('tests/data/band_si.xml', archive, None)
+    return archive
 
 
 def test_vasprunxml_static(parser):
@@ -96,6 +111,57 @@ def test_vasprunxml_bands(parser):
     assert np.shape(sec_k_band.section_k_band_segment[0].band_energies.magnitude) == (1, 128, 37)
     assert pytest.approx(sec_k_band.section_k_band_segment[1].band_energies[0][1][1].magnitude, -6.27128785e-18)
     assert sec_k_band.section_k_band_segment[5].band_occupations[0][127][5] == 0.0
+
+
+def test_band_silicon(silicon_band):
+    """Tests that the band structure of silicon is parsed correctly.
+    """
+    scc = silicon_band.section_run[-1].section_single_configuration_calculation[0]
+    band = scc.section_k_band[-1]
+    segments = band.section_k_band_segment
+    energies = np.array([s.band_energies.to(ureg.electron_volt).magnitude for s in segments])
+
+    # Check that an energy reference is reported
+    energy_reference = scc.energy_reference_fermi
+    if energy_reference is None:
+        energy_reference = scc.energy_reference_highest_occupied
+    assert energy_reference is not None
+    energy_reference = energy_reference.to(ureg.electron_volt).magnitude
+
+    # Check that an approporiately sized band gap is found at the given
+    # reference energy
+    energies = energies.flatten()
+    energies.sort()
+    lowest_unoccupied_index = np.searchsorted(energies, energy_reference, "right")[0]
+    highest_occupied_index = lowest_unoccupied_index - 1
+    gap = energies[lowest_unoccupied_index] - energies[highest_occupied_index]
+    assert gap == pytest.approx(0.5091)
+
+
+def test_dos_silicon(silicon_dos):
+    """Tests that the DOS of silicon is parsed correctly.
+    """
+    scc = silicon_dos.section_run[-1].section_single_configuration_calculation[0]
+    dos = scc.section_dos[-1]
+    energies = dos.dos_energies.to(ureg.electron_volt).magnitude
+    values = dos.dos_values
+
+    # Check that an energy reference is reported
+    energy_reference = scc.energy_reference_fermi
+    if energy_reference is None:
+        energy_reference = scc.energy_reference_highest_occupied
+    assert energy_reference is not None
+    energy_reference = energy_reference.to(ureg.electron_volt).magnitude
+
+    # Check that an appropriately sized band gap is found at the given
+    # reference energy
+    nonzero = np.unique(values.nonzero())
+    energies = energies[nonzero]
+    energies.sort()
+    lowest_unoccupied_index = np.searchsorted(energies, energy_reference, "right")[0]
+    highest_occupied_index = lowest_unoccupied_index - 1
+    gap = energies[lowest_unoccupied_index] - energies[highest_occupied_index]
+    assert gap == pytest.approx(0.83140)
 
 
 def test_outcar(parser):
