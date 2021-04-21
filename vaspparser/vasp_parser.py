@@ -609,32 +609,6 @@ class OutcarContentParser(ContentParser):
         return dos, fields
 
 
-# # TODO
-# This was not used in the last commit. It was also not working, because it applies regex to bytes array.
-# The xml.sax parser can parse XML that contains the mentioned entities. See test_broken_xml.
-# I am not sure if they still need to bo removed to avoid bad values. If this needs to be
-# added somewhere, overwrite FileParser.open might be a good place
-# class XMLParser(ElementTree.XMLParser):
-
-#     rx = re.compile("&#([0-9]+);|&#x([0-9a-fA-F]+);")
-
-#     def feed(self, data):
-#         m = self.rx.search(data)
-#         if m is not None:
-#             target = m.group(1)
-#             if target:
-#                 num = int(target)
-#             else:
-#                 num = int(m.group(2), 16)
-#             if not(num in (0x9, 0xA, 0xD) or 0x20 <= num <= 0xD7FF or 0xE000 <= num <= 0xFFFD or 0x10000 <= num <= 0x10FFFF):
-#                 # is invalid xml character, cut it out of the stream
-#                 mstart, mend = m.span()
-#                 mydata = data[:mstart] + data[mend:]
-#         else:
-#             mydata = data
-#         super().feed(mydata)
-
-
 class RunXmlContentHandler(ContentHandler):
     def __init__(self):
         self._text = ''
@@ -1071,7 +1045,7 @@ class VASPParser(FairdiParser):
                 r'?\s*<modeling>'
                 r'?\s*<generator>'
                 r'?\s*<i name="program" type="string">\s*vasp\s*</i>'
-                r'?|^\svasp[\.\d]+\s*\w+\s*\(build'),
+                r'?|^\svasp[\.\d]+.+?\s*\(build'),
             supported_compressions=['gz', 'bz2', 'xz'], mainfile_alternative=True)
 
         self._metainfo_env = m_env
