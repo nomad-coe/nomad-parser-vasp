@@ -274,7 +274,7 @@ class OutcarTextParser(TextParser):
             str_operation=get_key_values, repeats=False, convert=False))
 
         self._quantities.append(Quantity(
-            'ions_per_type', r'ions per type =([ \d]+)', dtype=int, repeats=False))
+            'ions_per_type', r'ions per type =\s*([ \d]+)', dtype=int, repeats=False))
 
         self._quantities.append(Quantity(
             'species', r'TITEL\s*=\s*(\w+) ([A-Z][a-z]*)', dtype=str, repeats=True))
@@ -425,6 +425,7 @@ class OutcarContentParser(ContentParser):
                             ions = [int(n) for n in line.split()]
                         except Exception:
                             pass
+            ions = [i for i in ions if not isinstance(i, str)]
             if len(ions) != len(species):
                 self.parser.logger.error('Inconsistent number of ions and species.')
                 return self._atom_info
