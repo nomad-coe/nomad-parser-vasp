@@ -187,6 +187,10 @@ def test_outcar(parser):
     assert sec_scc.stress_tensor[0][0].magnitude == pytest.approx(7.060258e+09)
     assert sec_scc.energy_reference_lowest_unoccupied[0].magnitude == pytest.approx(9.40461662e-19)
     assert sec_scc.energy_reference_highest_occupied[0].magnitude == pytest.approx(9.51212268e-19)
+    sec_scfs = sec_scc.section_scf_iteration
+    assert len(sec_scfs) == 11
+    assert sec_scfs[4].energy_total_scf_iteration.magnitude == pytest.approx(-1.20437432e-18)
+    assert sec_scfs[7].energy_sum_eigenvalues_scf_iteration == pytest.approx(-6.81528495e-17)
     sec_eigs = sec_scc.section_eigenvalues[0]
     assert np.shape(sec_eigs.eigenvalues_values) == (1, 145, 15)
     assert sec_eigs.eigenvalues_values[0][9][14].magnitude == pytest.approx(1.41810256e-18)

@@ -196,28 +196,28 @@ class OutcarTextParser(TextParser):
 
         scf_iteration = [
             Quantity(
-                'energy_total', r'free energy\s*TOTEN\s*=\s*([\d\.]+)\s*eV',
+                'energy_total', r'free energy\s*TOTEN\s*=\s*([\d\.\-]+)\s*eV',
                 repeats=False, dtype=float),
             Quantity(
-                'energy_entropy0', r'energy without entropy\s*=\s*([\d\.]+)',
+                'energy_entropy0', r'energy without entropy\s*=\s*([\d\.\-]+)',
                 repeats=False, dtype=float),
             Quantity(
-                'energy_T0', r'energy\(sigma\->0\)\s*=\s*([\d\.]+)',
+                'energy_T0', r'energy\(sigma\->0\)\s*=\s*([\d\.\-]+)',
                 repeats=False, dtype=float),
             Quantity(
                 'energy_components',
-                r'Free energy of the ion-electron system \(eV\)\s*\-+([\s\S]+?)\-{100}',
+                r'Free energy of the ion-electron system \(eV\)\s*\-+([\s\S]+?)\-{10}',
                 str_operation=get_key_values, convert=False)
         ]
 
         self._quantities.append(Quantity(
             'calculation',
-            r'(\-\-\s*Iteration\s*\d+\(\s*1\)\s*[\s\S]+?(?:FREE ENERGIE OF THE ION\-ELECTRON SYSTEM \(eV\)))'
+            r'(\-\-\s*Iteration\s*\d+\(\s*\d+\s*\)\s*[\s\S]+?(?:FREE ENERGIE OF THE ION\-ELECTRON SYSTEM \(eV\)))'
             r'([\s\S]+?\-{100})',
             repeats=True, sub_parser=TextParser(quantities=[
                 Quantity(
                     'scf_iteration',
-                    r'Iteration\s*\d+\(\s*\d+\)([\s\S]+?energy\(sigma\->0\)\s*=\s*[\d\.]+)',
+                    r'Iteration\s*\d+\(\s*\d+\s*\)([\s\S]+?energy\(sigma\->0\)\s*=\s*.+)',
                     repeats=True, sub_parser=TextParser(quantities=scf_iteration)),
                 Quantity(
                     'energies',
