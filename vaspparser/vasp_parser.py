@@ -38,6 +38,8 @@ from datetime import datetime
 import ase
 import re
 from xml.sax import ContentHandler, make_parser  # type: ignore
+import io
+import sys
 
 from .metainfo import m_env
 from nomad.parsing import FairdiParser
@@ -682,7 +684,39 @@ class RunXmlContentHandler(ContentHandler):
             return []
 
 
+illegal_unichrs = [(0x00, 0x08), (0x0B, 0x0C), (0x0E, 0x1F),
+                   (0x7F, 0x84), (0x86, 0x9F),
+                   (0xFDD0, 0xFDDF), (0xFFFE, 0xFFFF)]
+
+if sys.maxunicode >= 0x10000:
+    illegal_unichrs.extend([(0x1FFFE, 0x1FFFF), (0x2FFFE, 0x2FFFF),
+                            (0x3FFFE, 0x3FFFF), (0x4FFFE, 0x4FFFF),
+                            (0x5FFFE, 0x5FFFF), (0x6FFFE, 0x6FFFF),
+                            (0x7FFFE, 0x7FFFF), (0x8FFFE, 0x8FFFF),
+                            (0x9FFFE, 0x9FFFF), (0xAFFFE, 0xAFFFF),
+                            (0xBFFFE, 0xBFFFF), (0xCFFFE, 0xCFFFF),
+                            (0xDFFFE, 0xDFFFF), (0xEFFFE, 0xEFFFF),
+                            (0xFFFFE, 0xFFFFF), (0x10FFFE, 0x10FFFF)])
+
+illegal_ranges = [fr'{chr(low)}-{chr(high)}' for (low, high) in illegal_unichrs]
+xml_illegal_character_regex = '[' + ''.join(illegal_ranges) + ']'
+illegal_xml_chars_re = re.compile(xml_illegal_character_regex)
+
+
+class CleaningReader(io.FileIO):
+    def read(self, *args, **kwargs):
+        data = super().read(*args, **kwargs)
+        data = data.decode()
+        data = illegal_xml_chars_re.sub('', data)
+        data = data.encode()
+        return data
+
+
 class RunFileParser(FileParser):
+
+    def __init__(self, *args, **kwargs):
+        kwargs.update(open=CleaningReader)
+        super().__init__(*args, **kwargs)
 
     def parse(self):
         parser = make_parser()
