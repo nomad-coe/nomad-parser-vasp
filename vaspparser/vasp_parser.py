@@ -170,8 +170,6 @@ class OutcarTextParser(TextParser):
         super().__init__(None)
 
     def init_quantities(self):
-        self._quantities = []
-
         def str_to_array(val_in):
             val = [re.findall(r'(\-?\d+\.[\dEe]+)', v) for v in val_in.strip().split('\n') if '--' not in v]
             return np.array([v[0:3] for v in val], float), np.array([v[3:6] for v in val], float)
@@ -194,6 +192,15 @@ class OutcarTextParser(TextParser):
             date = date.replace('.', ' ')
             return dict(version=version, subversion=subversion, platform=platform, date=date, time=time)
 
+        def str_to_positions(val_in):
+            re_position = re.compile(r'\d*\s*(\-*\d+\.\d+)\s*(\-*\d+\.\d+)\s*(\-*\d+\.\d+)')
+            positions = []
+            for val in val_in.strip().split('\n'):
+                position = re_position.search(val)
+                if position:
+                    positions.append(position.groups())
+            return np.array(positions, dtype=float)
+
         scf_iteration = [
             Quantity(
                 'energy_total', r'free energy\s*TOTEN\s*=\s*([\d\.\-]+)\s*eV',
@@ -210,87 +217,97 @@ class OutcarTextParser(TextParser):
                 str_operation=get_key_values, convert=False)
         ]
 
-        self._quantities.append(Quantity(
-            'calculation',
-            r'(\-\-\s*Iteration\s*\d+\(\s*\d+\s*\)\s*[\s\S]+?(?:FREE ENERGIE OF THE ION\-ELECTRON SYSTEM \(eV\)))'
-            r'([\s\S]+?\-{100})',
-            repeats=True, sub_parser=TextParser(quantities=[
-                Quantity(
-                    'scf_iteration',
-                    r'Iteration\s*\d+\(\s*\d+\s*\)([\s\S]+?energy\(sigma\->0\)\s*=\s*.+)',
-                    repeats=True, sub_parser=TextParser(quantities=scf_iteration)),
-                Quantity(
-                    'energies',
-                    r'FREE ENERGIE OF THE ION-ELECTRON SYSTEM \(eV\)\s*\-+\s*([\s\S]+?)\-{10}',
-                    sub_parser=TextParser(quantities=[
-                        Quantity(
-                            'energy_total',
-                            r'free\s*energy\s*TOTEN\s*=\s*([\-\d\.]+)',
-                            repeats=False, dtype=float),
-                        Quantity(
-                            'energy_entropy0',
-                            r'energy\s*without\s*entropy\s*=\s*([\-\d\.]+)',
-                            repeats=False, dtype=float),
-                        Quantity(
-                            'energy_T0',
-                            r'energy\(sigma\->0\)\s*=\s*([\-\d\.]+)',
-                            repeats=False, dtype=float)])),
-                Quantity(
-                    'stress',
-                    r'in kB\s*(\-?\d+\.\d+)\s*(\-?\d+\.\d+)\s*(\-?\d+\.\d+)\s*'
-                    r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)',
-                    str_operation=str_to_stress, convert=False),
-                Quantity(
-                    'positions_forces',
-                    r'POSITION\s*TOTAL\-FORCE \(eV/Angst\)\s*\-+\s*([\d\.\s\-E]+)',
-                    str_operation=str_to_array, convert=False),
-                Quantity(
-                    'lattice_vectors',
-                    r'direct lattice vectors\s*reciprocal lattice vectors\s*'
-                    r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)'
-                    r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)'
-                    r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)',
-                    str_operation=str_to_array, convert=False),
-                Quantity(
-                    'converged',
-                    r'aborting loop because (EDIFF is reached)', repeats=False,
-                    dtype=str, convert=False),
-                Quantity(
-                    'fermi_energy', r'E\-fermi :\s*([\d\.]+)', dtype=str, repeats=False),
-                Quantity(
-                    'eigenvalues',
-                    r'band No\.\s*band energies\s*occupation\s*([\d\.\s\-]+?)(?:k\-point|spin|\-{10})',
-                    repeats=True, dtype=float)
-            ])))
+        calculation_quantities = [
+            Quantity(
+                'scf_iteration',
+                r'Iteration\s*\d+\(\s*\d+\s*\)([\s\S]+?energy\(sigma\->0\)\s*=\s*.+)',
+                repeats=True, sub_parser=TextParser(quantities=scf_iteration)),
+            Quantity(
+                'energies',
+                r'FREE ENERGIE OF THE ION-ELECTRON SYSTEM \(eV\)\s*\-+\s*([\s\S]+?)\-{10}',
+                sub_parser=TextParser(quantities=[
+                    Quantity(
+                        'energy_total',
+                        r'free\s*energy\s*TOTEN\s*=\s*([\-\d\.]+)',
+                        repeats=False, dtype=float),
+                    Quantity(
+                        'energy_entropy0',
+                        r'energy\s*without\s*entropy\s*=\s*([\-\d\.]+)',
+                        repeats=False, dtype=float),
+                    Quantity(
+                        'energy_T0',
+                        r'energy\(sigma\->0\)\s*=\s*([\-\d\.]+)',
+                        repeats=False, dtype=float)])),
+            Quantity(
+                'stress',
+                r'in kB\s*(\-?\d+\.\d+)\s*(\-?\d+\.\d+)\s*(\-?\d+\.\d+)\s*'
+                r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)',
+                str_operation=str_to_stress, convert=False),
+            Quantity(
+                'positions_forces',
+                r'POSITION\s*TOTAL\-FORCE \(eV/Angst\)\s*\-+\s*([\d\.\s\-E]+)',
+                str_operation=str_to_array, convert=False),
+            Quantity(
+                'lattice_vectors',
+                r'direct lattice vectors\s*reciprocal lattice vectors\s*'
+                r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)'
+                r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)'
+                r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)',
+                str_operation=str_to_array, convert=False),
+            Quantity(
+                'converged',
+                r'aborting loop because (EDIFF is reached)', repeats=False,
+                dtype=str, convert=False),
+            Quantity(
+                'fermi_energy', r'E\-fermi :\s*([\d\.]+)', dtype=str, repeats=False),
+            Quantity(
+                'eigenvalues',
+                r'band No\.\s*band energies\s*occupation\s*([\d\.\s\-]+?)(?:k\-point|spin|\-{10})',
+                repeats=True, dtype=float)]
 
-        self._quantities.append(Quantity(
-            'header',
-            r'vasp\.([\d\.]+)\s*(\w+)\s*[\s\S]+?\)\s*(\w+)\s*'
-            r'executed on\s*(\w+)\s*date\s*([\d\.]+)\s*([\d\:]+)\s*(\w+)',
-            repeats=False, str_operation=str_to_header, convert=False))
-
-        self._quantities.append(Quantity(
-            'parameters', r'Startparameter for this run:([\s\S]+?)\-{100}',
-            str_operation=get_key_values, repeats=False, convert=False))
-
-        self._quantities.append(Quantity(
-            'ions_per_type', r'ions per type =\s*([ \d]+)', dtype=int, repeats=False))
-
-        self._quantities.append(Quantity(
-            'species', r'TITEL\s*=\s*(\w+) ([A-Z][a-z]*)', dtype=str, repeats=True))
-
-        self._quantities.append(Quantity(
-            'mass_valence', r'POMASS\s*=\s*([\d\.]+);\s*ZVAL\s*=\s*([\d\.]+)\s*mass and valenz',
-            dtype=float, repeats=True
-        ))
-
-        self._quantities.append(Quantity(
-            'kpoints',
-            r'k-points in reciprocal lattice and weights:[\s\S]+?\n([\d\.\s\-]+)',
-            repeats=False, dtype=float))
-
-        self._quantities.append(Quantity(
-            'nbands', r'NBANDS\s*=\s*(\d+)', dtype=int, repeats=False))
+        self._quantities = [
+            Quantity(
+                'calculation',
+                r'(\-\-\s*Iteration\s*1\(\s*\d+\s*\)\s*[\s\S]+?)'
+                r'((?:FREE ENERGIE OF THE ION\-ELECTRON SYSTEM \(eV\)[\s\S]+?\-{100})|\Z)',
+                repeats=True, sub_parser=TextParser(quantities=calculation_quantities)),
+            Quantity(
+                'header',
+                r'vasp\.([\d\.]+)\s*(\w+)\s*[\s\S]+?\)\s*(\w+)\s*'
+                r'executed on\s*(\w+)\s*date\s*([\d\.]+)\s*([\d\:]+)\s*(\w+)',
+                repeats=False, str_operation=str_to_header, convert=False),
+            Quantity(
+                'parameters', r'Startparameter for this run:([\s\S]+?)\-{100}',
+                str_operation=get_key_values, repeats=False, convert=False),
+            Quantity(
+                'ions_per_type', r'ions per type =\s*([ \d]+)', dtype=int, repeats=False),
+            Quantity(
+                'species', r'TITEL\s*=\s*(\w+) ([A-Z][a-z]*)', dtype=str, repeats=True),
+            Quantity(
+                'mass_valence', r'POMASS\s*=\s*([\d\.]+);\s*ZVAL\s*=\s*([\d\.]+)\s*mass and valenz',
+                dtype=float, repeats=True),
+            Quantity(
+                'kpoints',
+                r'k-points in reciprocal lattice and weights:[\s\S]+?\n([\d\.\s\-]+)',
+                repeats=False, dtype=float),
+            Quantity(
+                'nbands', r'NBANDS\s*=\s*(\d+)', dtype=int, repeats=False),
+            Quantity(
+                'lattice_vectors',
+                r'direct lattice vectors\s*reciprocal lattice vectors\s*'
+                r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)'
+                r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)'
+                r'(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)(\-?\d+\.\d+\s*)',
+                str_operation=str_to_array, convert=False),
+            Quantity(
+                'positions',
+                r'ion\s*position\s*nearest neighbor table([\s\S]+?)LATTYP',
+                str_operation=str_to_positions, convert=False),
+            # alternative format
+            Quantity(
+                'positions',
+                r'position of ions in cartesian coordinates\s*\(Angst\):([\s\S]+?)\n *\n',
+                str_operation=str_to_positions, convert=False)]
 
 
 class OutcarContentParser(ContentParser):
@@ -411,6 +428,7 @@ class OutcarContentParser(ContentParser):
             ions = self.parser.get('ions_per_type', [])
             species = self.parser.get('species', [])
             ions = [ions] if isinstance(ions, int) else ions
+            ions = [int(i) for i in ions]
             mass_valence = self.parser.get('mass_valence', [])
             if len(ions) != len(species):
                 # get it from POSCAR
@@ -458,6 +476,12 @@ class OutcarContentParser(ContentParser):
             'calculation', [{}] * (n_calc + 1))[n_calc].get('positions_forces', [None])[0]
         selective = None
         nose = None
+
+        if cell is None:
+            # get it from initialization
+            cell = self.parser.get('lattice_vectors', [None])[0]
+        if positions is None:
+            positions = self.parser.get('positions', None)
 
         if positions is not None:
             positions = pint.Quantity(positions, 'angstrom')
@@ -1297,6 +1321,9 @@ class VASPParser(FairdiParser):
 
             # dos
             parse_dos(n)
+
+        if self.parser.n_calculations == 0:
+            self.logger.warn('No calculation was parsed.')
 
     def parse(self, filepath, archive, logger):
         self.filepath = filepath
