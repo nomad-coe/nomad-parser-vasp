@@ -20,6 +20,7 @@ import pytest
 import pint
 import numpy as np
 
+from nomad import utils
 from nomad.units import ureg
 from nomad.datamodel import EntryArchive
 from vaspparser.vasp_parser import VASPParser
@@ -207,3 +208,14 @@ def test_outcar(parser):
 def test_broken_xml(parser):
     archive = EntryArchive()
     parser.parse('tests/data/vasprun.xml.broken', archive, None)
+
+
+def test_multiple_runs(caplog, parser):
+    logger = utils.get_logger(__name__)
+    for path in ['tests/data/OUTCAR', 'tests/data/more_outcars/OUTCAR_a']:
+
+        archive = EntryArchive()
+        parser.parse(path, archive, logger)
+
+    for record in caplog.get_records(when='call'):
+        assert record.levelname != 'ERROR'
