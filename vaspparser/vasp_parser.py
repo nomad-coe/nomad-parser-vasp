@@ -411,6 +411,7 @@ class OutcarContentParser(ContentParser):
             ions = self.parser.get('ions_per_type', [])
             species = self.parser.get('species', [])
             ions = [ions] if isinstance(ions, int) else ions
+            ions = [int(i) for i in ions]
             mass_valence = self.parser.get('mass_valence', [])
             if len(ions) != len(species):
                 # get it from POSCAR
