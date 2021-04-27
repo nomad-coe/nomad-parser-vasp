@@ -45,7 +45,7 @@ from nomad.parsing.file_parser import FileParser
 from nomad.parsing.file_parser.text_parser import TextParser, Quantity
 from nomad.datamodel.metainfo.common_dft import Run, Method, XCFunctionals,\
     SingleConfigurationCalculation, ScfIteration, MethodAtomKind, System, Eigenvalues,\
-    KBand, KBandSegment, Dos, BasisSetCellDependent, MethodBasisSet
+    KBand, KBandSegment, Dos, BasisSetCellDependent, MethodBasisSet, SamplingMethod
 
 
 def get_key_values(val_in):
@@ -162,6 +162,9 @@ class ContentParser:
             val = -1 if self.incar.get('NSW', 0) in [0, 1] else 0
         return val
 
+    def is_converged(self, n_calc):
+        return
+
 
 class OutcarTextParser(TextParser):
     def __init__(self):
@@ -263,12 +266,15 @@ class OutcarTextParser(TextParser):
             Quantity(
                 'eigenvalues',
                 r'band No\.\s*band energies\s*occupation\s*([\d\.\s\-]+?)(?:k\-point|spin|\-{10})',
-                repeats=True, dtype=float)]
+                repeats=True, dtype=float),
+            Quantity(
+                'convergence',
+                r'(aborting loop because EDIFF is reached)')]
 
         self._quantities = [
             Quantity(
                 'calculation',
-                r'(\-\-\s*Iteration\s*1\(\s*\d+\s*\)\s*[\s\S]+?)'
+                r'(\-\-\s*Iteration\s*\d+\(\s*1\s*\)\s*[\s\S]+?)'
                 r'((?:FREE ENERGIE OF THE ION\-ELECTRON SYSTEM \(eV\)[\s\S]+?\-{100})|\Z)',
                 repeats=True, sub_parser=TextParser(quantities=calculation_quantities)),
             Quantity(
@@ -632,6 +638,10 @@ class OutcarContentParser(ContentParser):
                 'Cannot determine lm fields for n_lm', data=dict(n_lm=n_lm))
 
         return dos, fields
+
+    def is_converged(self, n_calc):
+        return self.parser.get('calculation', [{}] * (n_calc + 1))[n_calc].get(
+            'convergence') is not None
 
 
 class RunXmlContentHandler(ContentHandler):
@@ -1070,7 +1080,7 @@ class VASPParser(FairdiParser):
                 r'?\s*<modeling>'
                 r'?\s*<generator>'
                 r'?\s*<i name="program" type="string">\s*vasp\s*</i>'
-                r'?|^\svasp[\.\d]+.+?\s*\(build'),
+                r'?|^\svasp[\.\d]+.+?\s*(?:\(build|complex)'),
             supported_compressions=['gz', 'bz2', 'xz'], mainfile_alternative=True)
 
         self._metainfo_env = m_env
@@ -1160,6 +1170,20 @@ class VASPParser(FairdiParser):
             for xc_functional in xc_functionals:
                 sec_xc_functional = sec_method.m_create(XCFunctionals)
                 sec_xc_functional.XC_functional_name = xc_functional
+
+    def parse_sampling_method(self):
+        sec_sampling_method = self.archive.section_run[-1].m_create(SamplingMethod)
+
+        # convergence thresholds
+        tolerance = self.parser.incar.get('EDIFF')
+        if tolerance is not None:
+            sec_sampling_method.scf_threshold_energy_change = pint.Quantity(tolerance, 'eV')
+        tolerance = self.parser.incar.get('EDIFFG')
+        if tolerance is not None:
+            if tolerance > 0:
+                sec_sampling_method.geometry_optimization_energy_change = pint.Quantity(tolerance, 'eV')
+            else:
+                sec_sampling_method.geometry_optimization_threshold_force = pint.Quantity(abs(tolerance), 'eV/angstrom')
 
     def parse_configurations(self):
         sec_run = self.archive.section_run[-1]
@@ -1322,6 +1346,11 @@ class VASPParser(FairdiParser):
             # dos
             parse_dos(n)
 
+            # convergence
+            converged = self.parser.is_converged(n)
+            if converged:
+                sec_scc.single_configuration_calculation_converged = converged
+
         if self.parser.n_calculations == 0:
             self.logger.warn('No calculation was parsed.')
 
@@ -1354,5 +1383,7 @@ class VASPParser(FairdiParser):
             sec_run.program_compilation_datetime = dtime.total_seconds()
 
         self.parse_method()
+
+        self.parse_sampling_method()
 
         self.parse_configurations()
