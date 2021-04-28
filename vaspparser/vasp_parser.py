@@ -51,7 +51,7 @@ from nomad.datamodel.metainfo.common_dft import Run, Method, XCFunctionals,\
 def get_key_values(val_in):
     val = [v for v in val_in.split('\n') if '=' in v]
     data = {}
-    pattern = re.compile(r'([A-Z]+)\s*=\s*([\w\-]+\s{0,3}[\d\. ]*)')
+    pattern = re.compile(r'([A-Z_]+)\s*=\s*([\w\-]+\s{0,3}[\d\. ]*[E\-\d]*)')
 
     def convert(v):
         if isinstance(v, list):
@@ -1171,13 +1171,14 @@ class VASPParser(FairdiParser):
                 sec_xc_functional = sec_method.m_create(XCFunctionals)
                 sec_xc_functional.XC_functional_name = xc_functional
 
-    def parse_sampling_method(self):
-        sec_sampling_method = self.archive.section_run[-1].m_create(SamplingMethod)
-
         # convergence thresholds
         tolerance = self.parser.incar.get('EDIFF')
         if tolerance is not None:
-            sec_sampling_method.scf_threshold_energy_change = pint.Quantity(tolerance, 'eV')
+            sec_method.scf_threshold_energy_change = pint.Quantity(tolerance, 'eV')
+
+    def parse_sampling_method(self):
+        sec_sampling_method = self.archive.section_run[-1].m_create(SamplingMethod)
+
         tolerance = self.parser.incar.get('EDIFFG')
         if tolerance is not None:
             if tolerance > 0:
