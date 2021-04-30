@@ -17,12 +17,15 @@
 #
 
 import pytest
-import pint
 import numpy as np
 
 from nomad.units import ureg
 from nomad.datamodel import EntryArchive
 from vaspparser.vasp_parser import VASPParser
+
+
+def approx(value, abs=0, rel=1e-6):
+    return pytest.approx(value, abs=abs, rel=rel)
 
 
 @pytest.fixture(scope='module')
@@ -52,32 +55,32 @@ def test_vasprunxml_static(parser):
 
     sec_run = archive.section_run[0]
 
-    assert sec_run.program_compilation_datetime == pint.Quantity(1366564273.0, 's')
+    assert sec_run.program_compilation_datetime.magnitude == 1366564273.0
 
     sec_method = sec_run.section_method[0]
     assert len(sec_method.x_vasp_incar_in) == 27
     assert len(sec_method.x_vasp_incar_out) == 112
     assert sec_method.x_vasp_incar_in['LCHARG']
     assert len(sec_method.k_mesh_points) == 888
-    assert sec_method.k_mesh_points[-1][2] == pytest.approx(0.48437500)
-    assert sec_method.k_mesh_weights[100] == pytest.approx(0.00073242)
+    assert sec_method.k_mesh_points[-1][2] == approx(0.48437500)
+    assert sec_method.k_mesh_weights[100] == approx(0.00073242)
     assert (sec_method.x_vasp_tetrahedrons_list[0] == [4, 1, 2, 2, 18]).all()
-    assert sec_method.section_method_atom_kind[0].method_atom_kind_mass.magnitude == pytest.approx(24.305)
+    assert sec_method.section_method_atom_kind[0].method_atom_kind_mass.magnitude == approx(24.305)
     assert len(sec_method.section_XC_functionals) == 2
 
     sec_system = sec_run.section_system[-1]
     assert len(sec_system.atom_labels) == 1
-    assert sec_system.lattice_vectors[0][0].magnitude == pytest.approx(-1.78559323e-10)
+    assert sec_system.lattice_vectors[0][0].magnitude == approx(-1.78559323e-10)
 
     sec_scc = sec_run.section_single_configuration_calculation[-1]
-    assert sec_scc.energy_total.magnitude == pytest.approx(2.3264377e-19)
+    assert sec_scc.energy_total.magnitude == approx(-2.3264377e-19)
     assert np.shape(sec_scc.atom_forces) == (1, 3)
-    assert sec_scc.stress_tensor[2][2].magnitude == pytest.approx(-2.78384438e+08)
+    assert sec_scc.stress_tensor[2][2].magnitude == approx(-2.78384438e+08)
     assert len(sec_scc.section_dos[0].dos_energies) == 5000
     assert len(sec_scc.section_dos[0].dos_lm) == 9
-    assert sec_scc.section_dos[0].dos_values_lm[0][0][0][-1] == pytest.approx(3.40162245e+17)
+    assert sec_scc.section_dos[0].dos_values_lm[0][0][0][-1] == approx(3.40162245e+17)
     assert np.shape(sec_scc.section_eigenvalues[0].eigenvalues_values) == (1, 888, 37)
-    assert sec_scc.section_scf_iteration[2].energy_total_T0_scf_iteration.magnitude == pytest.approx(-2.27580485e-19,)
+    assert sec_scc.section_scf_iteration[2].energy_total_T0_scf_iteration.magnitude == approx(-2.27580485e-19,)
 
 
 def test_vasprunxml_relax(parser):
@@ -88,16 +91,16 @@ def test_vasprunxml_relax(parser):
 
     sec_systems = archive.section_run[0].section_system
     assert len(sec_systems) == 3
-    assert sec_systems[1].atom_positions[1][0].magnitude == pytest.approx(3.2771907e-10)
+    assert sec_systems[1].atom_positions[1][0].magnitude == approx(3.2771907e-10)
 
     sec_sccs = archive.section_run[0].section_single_configuration_calculation
     assert len(sec_sccs) == 3
     assert [len(scc.section_scf_iteration) for scc in sec_sccs] == [12, 10, 6]
-    assert sec_sccs[0].energy_free.magnitude == pytest.approx(-1.14352735e-18)
+    assert sec_sccs[0].energy_free.magnitude == approx(-1.14352735e-18)
     assert np.mean(sec_sccs[1].atom_forces.magnitude) == 0.0
-    assert sec_sccs[2].stress_tensor[2][2].magnitude == pytest.approx(-2.02429105e+08)
-    assert sec_sccs[2].energy_reference_lowest_unoccupied[0].magnitude == pytest.approx(7.93718304e-19)
-    assert sec_sccs[2].energy_reference_highest_occupied[1].magnitude == pytest.approx(7.93702283e-19)
+    assert sec_sccs[2].stress_tensor[2][2].magnitude == approx(-2.02429105e+08)
+    assert sec_sccs[2].energy_reference_lowest_unoccupied[0].magnitude == approx(7.93718304e-19)
+    assert sec_sccs[2].energy_reference_highest_occupied[1].magnitude == approx(7.93702283e-19)
     assert [len(scc.section_eigenvalues) for scc in sec_sccs] == [0, 0, 1]
     assert [len(scc.section_dos) for scc in sec_sccs] == [0, 0, 1]
 
@@ -109,7 +112,7 @@ def test_vasprunxml_bands(parser):
     sec_k_band = archive.section_run[0].section_single_configuration_calculation[0].section_k_band[0]
     assert len(sec_k_band.section_k_band_segment) == 6
     assert np.shape(sec_k_band.section_k_band_segment[0].band_energies.magnitude) == (1, 128, 37)
-    assert sec_k_band.section_k_band_segment[1].band_energies[0][1][1].magnitude == pytest.approx(-6.27128785e-18)
+    assert sec_k_band.section_k_band_segment[1].band_energies[0][1][1].magnitude == approx(-6.27128785e-18)
     assert sec_k_band.section_k_band_segment[5].band_occupations[0][127][5] == 0.0
 
 
@@ -135,7 +138,7 @@ def test_band_silicon(silicon_band):
     lowest_unoccupied_index = np.searchsorted(energies, energy_reference, "right")[0]
     highest_occupied_index = lowest_unoccupied_index - 1
     gap = energies[lowest_unoccupied_index] - energies[highest_occupied_index]
-    assert gap == pytest.approx(0.5091)
+    assert gap == approx(0.5091)
 
 
 def test_dos_silicon(silicon_dos):
@@ -161,7 +164,7 @@ def test_dos_silicon(silicon_dos):
     lowest_unoccupied_index = np.searchsorted(energies, energy_reference, "right")[0]
     highest_occupied_index = lowest_unoccupied_index - 1
     gap = energies[lowest_unoccupied_index] - energies[highest_occupied_index]
-    assert gap == pytest.approx(0.83140)
+    assert gap == approx(0.83140)
 
 
 def test_outcar(parser):
@@ -170,7 +173,7 @@ def test_outcar(parser):
 
     sec_run = archive.section_run[0]
     assert sec_run.program_version == '5.3.2 13Sep12 complex serial LinuxIFC'
-    assert sec_run.section_basis_set_cell_dependent[0].basis_set_planewave_cutoff.magnitude == pytest.approx(8.3313185e-17)
+    assert sec_run.section_basis_set_cell_dependent[0].basis_set_planewave_cutoff.magnitude == approx(8.3313185e-17)
 
     sec_method = sec_run.section_method[0]
     assert sec_method.section_XC_functionals[0].XC_functional_name == 'GGA_X_PBE'
@@ -178,30 +181,30 @@ def test_outcar(parser):
     assert sec_method.section_method_atom_kind[1].method_atom_kind_pseudopotential_name == 'Ag'
 
     sec_system = sec_run.section_system[0]
-    assert sec_system.lattice_vectors[1][0].magnitude == pytest.approx(3.141538e-10)
-    assert sec_system.atom_positions[1][0].magnitude == pytest.approx(3.14154e-10)
+    assert sec_system.lattice_vectors[1][0].magnitude == approx(3.141538e-10)
+    assert sec_system.atom_positions[1][0].magnitude == approx(3.14154e-10)
 
     sec_scc = sec_run.section_single_configuration_calculation[0]
-    assert sec_scc.energy_total.magnitude == pytest.approx(-2.23390885e-18)
+    assert sec_scc.energy_total.magnitude == approx(-2.23390885e-18)
     assert sec_scc.atom_forces[0][0].magnitude == 0.0
-    assert sec_scc.stress_tensor[0][0].magnitude == pytest.approx(7.060258e+09)
-    assert sec_scc.energy_reference_lowest_unoccupied[0].magnitude == pytest.approx(9.40461662e-19)
-    assert sec_scc.energy_reference_highest_occupied[0].magnitude == pytest.approx(9.51212268e-19)
+    assert sec_scc.stress_tensor[0][0].magnitude == approx(7.060258e+09)
+    assert sec_scc.energy_reference_lowest_unoccupied[0].magnitude == approx(9.40461662e-19)
+    assert sec_scc.energy_reference_highest_occupied[0].magnitude == approx(9.51212268e-19)
     sec_scfs = sec_scc.section_scf_iteration
     assert len(sec_scfs) == 11
-    assert sec_scfs[4].energy_total_scf_iteration.magnitude == pytest.approx(-1.20437432e-18)
-    assert sec_scfs[7].energy_sum_eigenvalues_scf_iteration == pytest.approx(-6.81528495e-17)
+    assert sec_scfs[4].energy_total_scf_iteration.magnitude == approx(-1.20437432e-18)
+    assert sec_scfs[7].energy_sum_eigenvalues_scf_iteration.magnitude == approx(-1.61008452e-17)
     sec_eigs = sec_scc.section_eigenvalues[0]
     assert np.shape(sec_eigs.eigenvalues_values) == (1, 145, 15)
-    assert sec_eigs.eigenvalues_values[0][9][14].magnitude == pytest.approx(1.41810256e-18)
+    assert sec_eigs.eigenvalues_values[0][9][14].magnitude == approx(1.41810256e-18)
     assert sec_eigs.eigenvalues_occupation[0][49][9] == 2.0
     sec_dos = sec_scc.section_dos[0]
     assert len(sec_dos.dos_energies) == 301
     assert sec_dos.dos_integrated_values[0][-1] == 30.0
-    assert sec_dos.dos_energies[2].magnitude == pytest.approx(-5.05662967e-18)
+    assert sec_dos.dos_energies[2].magnitude == approx(-5.0332379e-18)
     assert len(sec_dos.dos_lm) == 16
-    assert sec_dos.dos_values_lm[5][0][0][-15] == pytest.approx(1.51481425e+17)
-    assert sec_dos.dos_values_lm[2][0][1][-16] == pytest.approx(1.71267009e+16)
+    assert sec_dos.dos_values_lm[5][0][0][-15] == approx(1.51481425e+17)
+    assert sec_dos.dos_values_lm[2][0][1][-16] == approx(1.71267009e+16)
 
 
 def test_broken_xml(parser):
