@@ -33,13 +33,13 @@ from typing import List
 import os
 import numpy as np
 import logging
-import pint
 from datetime import datetime
 import ase
 import re
 from xml.sax import ContentHandler, make_parser  # type: ignore
 
 from .metainfo import m_env
+from nomad.units import ureg
 from nomad.parsing import FairdiParser
 from nomad.parsing.file_parser import FileParser
 from nomad.parsing.file_parser.text_parser import TextParser, Quantity
@@ -490,9 +490,9 @@ class OutcarContentParser(ContentParser):
             positions = self.parser.get('positions', None)
 
         if positions is not None:
-            positions = pint.Quantity(positions, 'angstrom')
+            positions = positions * ureg.angstrom
         if cell is not None:
-            cell = pint.Quantity(cell, 'angstrom')
+            cell = cell * ureg.angstrom
 
         return dict(cell=cell, positions=positions, selective=selective, nose=nose)
 
@@ -875,7 +875,7 @@ class RunContentParser(ContentParser):
                 self._kpoints_info['divisions'] = divisions['divisions']
             volumeweight = self._get_key_values('/modeling[0]/kpoints[0]/generation[0]/i[@name="volumeweight"]')
             if volumeweight:
-                volumeweight = pint.Quantity(volumeweight['volumeweight'], 'angstrom ** 3').to('m**3')
+                volumeweight = (volumeweight['volumeweight'] * ureg.angstrom ** 3).to('m**3')
                 # TODO set propert unit in metainfo
                 self._kpoints_info['x_vasp_tetrahedron_volume'] = volumeweight.magnitude
             points = self._get_key_values(
@@ -967,9 +967,9 @@ class RunContentParser(ContentParser):
             f'{structure}/nose/v', array=True).get('v', None)
 
         if positions is not None:
-            positions = pint.Quantity(np.dot(positions, cell), 'angstrom')
+            positions = np.dot(positions, cell) * ureg.angstrom
         if cell is not None:
-            cell = pint.Quantity(cell, 'angstrom')
+            cell = cell * ureg.angstrom
 
         return dict(cell=cell, positions=positions, selective=selective, nose=nose)
 
@@ -1108,8 +1108,8 @@ class VASPParser(FairdiParser):
         prec = 1.3 if 'acc' in self.parser.incar.get('PREC', '') else 1.0
         sec_basis_set_cell_dependent = self.archive.section_run[-1].m_create(
             BasisSetCellDependent)
-        sec_basis_set_cell_dependent.basis_set_planewave_cutoff = pint.Quantity(
-            self.parser.incar.get('ENMAX', self.parser.incar.get('ENCUT', 0.0)) * prec, 'eV')
+        sec_basis_set_cell_dependent.basis_set_planewave_cutoff = self.parser.incar.get(
+            'ENMAX', self.parser.incar.get('ENCUT', 0.0)) * prec * ureg.eV
 
         sec_method_basis_set = sec_method.m_create(MethodBasisSet)
         sec_method_basis_set.mapping_section_method_basis_set_cell_associated = sec_basis_set_cell_dependent
@@ -1151,8 +1151,7 @@ class VASPParser(FairdiParser):
             atom_label = '%s%d' % (
                 element[i], atom_counts[element[i]]) if atom_counts[element[i]] > 0 else element[i]
             sec_method_atom_kind.method_atom_kind_label = str(atom_label)
-            sec_method_atom_kind.method_atom_kind_mass = pint.Quantity(
-                atomtypes.get('mass', [1] * (i + 1))[i], 'amu')
+            sec_method_atom_kind.method_atom_kind_mass = atomtypes.get('mass', [1] * (i + 1))[i] * ureg.amu
             sec_method_atom_kind.method_atom_kind_explicit_electrons = atomtypes.get(
                 'valence', [0] * (i + 1))[i]
             pseudopotential = atomtypes.get('pseudopotential')[i]
@@ -1174,7 +1173,7 @@ class VASPParser(FairdiParser):
         # convergence thresholds
         tolerance = self.parser.incar.get('EDIFF')
         if tolerance is not None:
-            sec_method.scf_threshold_energy_change = pint.Quantity(tolerance, 'eV')
+            sec_method.scf_threshold_energy_change = tolerance * ureg.eV
 
     def parse_sampling_method(self):
         sec_sampling_method = self.archive.section_run[-1].m_create(SamplingMethod)
@@ -1182,9 +1181,9 @@ class VASPParser(FairdiParser):
         tolerance = self.parser.incar.get('EDIFFG')
         if tolerance is not None:
             if tolerance > 0:
-                sec_sampling_method.geometry_optimization_energy_change = pint.Quantity(tolerance, 'eV')
+                sec_sampling_method.geometry_optimization_energy_change = tolerance * ureg.eV
             else:
-                sec_sampling_method.geometry_optimization_threshold_force = pint.Quantity(abs(tolerance), 'eV/angstrom')
+                sec_sampling_method.geometry_optimization_threshold_force = abs(tolerance) * ureg.eV / ureg.angstrom
 
     def parse_configurations(self):
         sec_run = self.archive.section_run[-1]
@@ -1230,7 +1229,7 @@ class VASPParser(FairdiParser):
                 if val is None or metainfo_key is None:
                     continue
 
-                val = pint.Quantity(val, 'eV')
+                val = val * ureg.eV
 
                 try:
                     setattr(section, '%s%s' % (metainfo_key, ext), val)
@@ -1259,8 +1258,8 @@ class VASPParser(FairdiParser):
                 valence_max.append(np.amin(eigs[i]) - 1.0 if not occupied else max(occupied))
                 unoccupied = [eigs[i, o[0], o[1]] for o in np.argwhere(occs[i] < 0.5)]
                 conduction_min.append(np.amin(eigs[i]) - 1.0 if not unoccupied else min(unoccupied))
-            sec_scc.energy_reference_highest_occupied = pint.Quantity(valence_max, 'eV')
-            sec_scc.energy_reference_lowest_unoccupied = pint.Quantity(conduction_min, 'eV')
+            sec_scc.energy_reference_highest_occupied = valence_max * ureg.eV
+            sec_scc.energy_reference_lowest_unoccupied = conduction_min * ureg.eV
 
             if self.parser.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
                 # I removed normalization since imho it should be done by normalizer
@@ -1279,13 +1278,13 @@ class VASPParser(FairdiParser):
                 occs = np.transpose(occs, axes=(1, 0, 2, 3))
                 for n in range(n_segments):
                     sec_k_band_segment = sec_k_band.m_create(KBandSegment)
-                    sec_k_band_segment.band_energies = pint.Quantity(eigs[n], 'eV')
+                    sec_k_band_segment.band_energies = eigs[n] * ureg.eV
                     sec_k_band_segment.band_occupations = occs[n]
                     sec_k_band_segment.band_k_points = kpoints[n]
                     sec_k_band_segment.band_segm_start_end = np.asarray(
                         [kpoints[n, 0], kpoints[n, divisions - 1]])
             else:
-                sec_eigenvalues.eigenvalues_values = pint.Quantity(eigs, 'eV')
+                sec_eigenvalues.eigenvalues_values = eigs * ureg.eV
                 sec_eigenvalues.eigenvalues_occupation = occs
 
         def parse_dos(n_calc):
@@ -1302,17 +1301,17 @@ class VASPParser(FairdiParser):
             if values is not None:
                 sec_scc = sec_run.section_single_configuration_calculation[-1]
                 sec_dos = sec_scc.m_create(Dos)
-                sec_dos.dos_energies = pint.Quantity(energies, 'eV')
+                sec_dos.dos_energies = energies * ureg.eV
 
-                sec_dos.dos_values = pint.Quantity(values, '1/eV').to('1/joule').magnitude
+                sec_dos.dos_values = (values / ureg.eV).to('1/joule').magnitude
                 sec_dos.dos_integrated_values = integrated
 
-                sec_dos.energy_reference_fermi = pint.Quantity([e_fermi] * self.parser.ispin, 'eV')
+                sec_dos.energy_reference_fermi = ([e_fermi] * self.parser.ispin) * ureg.eV
 
                 # partial dos
                 dos, fields = self.parser.get_partial_dos(n_calc)
                 if dos is not None:
-                    sec_dos.dos_values_lm = pint.Quantity(dos, '1/eV').to('1/joule').magnitude
+                    sec_dos.dos_values_lm = (dos / ureg.eV).to('1/joule').magnitude
                     sec_dos.dos_lm = [lm_converter.get(field, [-1, -1]) for field in fields]
                     sec_dos.dos_m_kind = 'polynomial'
 
@@ -1326,13 +1325,13 @@ class VASPParser(FairdiParser):
             forces, stress = self.parser.get_forces_stress(n)
             if forces is not None:
                 try:
-                    sec_scc.atom_forces = pint.Quantity(forces, 'eV/angstrom')
+                    sec_scc.atom_forces = forces * ureg.eV / ureg.angstrom
                 except Exception:
                     self.logger.error('Error parsing forces.')
             if stress is not None:
                 try:
                     # TODO verify if stress unit in xml is also kbar
-                    sec_scc.stress_tensor = pint.Quantity(stress, 'kbar')
+                    sec_scc.stress_tensor = stress * ureg.kbar
                 except Exception:
                     self.logger.error('Error parsing stress.')
 
