@@ -76,9 +76,9 @@ def test_vasprunxml_static(parser):
     assert sec_scc.energy_total.magnitude == approx(-2.3264377e-19)
     assert np.shape(sec_scc.atom_forces) == (1, 3)
     assert sec_scc.stress_tensor[2][2].magnitude == approx(-2.78384438e+08)
-    assert len(sec_scc.section_dos[0].dos_energies) == 5000
-    assert len(sec_scc.section_dos[0].dos_lm) == 9
-    assert sec_scc.section_dos[0].dos_values_lm[0][0][0][-1] == approx(3.40162245e+17)
+    assert len(sec_scc.dos_electronic[0].dos_energies) == 5000
+    assert len(sec_scc.dos_electronic[0].dos_atom_projected) == 9
+    assert sec_scc.dos_electronic[0].dos_atom_projected[0].dos_values[-1] == approx(3.40162245e+17)
     assert np.shape(sec_scc.section_eigenvalues[0].eigenvalues_values) == (1, 888, 37)
     assert sec_scc.section_scf_iteration[2].energy_total_T0_scf_iteration.magnitude == approx(-2.27580485e-19,)
 
@@ -102,7 +102,7 @@ def test_vasprunxml_relax(parser):
     assert sec_sccs[2].energy_reference_lowest_unoccupied[0].magnitude == approx(7.93718304e-19)
     assert sec_sccs[2].energy_reference_highest_occupied[1].magnitude == approx(7.93702283e-19)
     assert [len(scc.section_eigenvalues) for scc in sec_sccs] == [0, 0, 1]
-    assert [len(scc.section_dos) for scc in sec_sccs] == [0, 0, 1]
+    assert [len(scc.dos_electronic) for scc in sec_sccs] == [0, 0, 1]
 
 
 def test_vasprunxml_bands(parser):
@@ -145,9 +145,9 @@ def test_dos_silicon(silicon_dos):
     """Tests that the DOS of silicon is parsed correctly.
     """
     scc = silicon_dos.section_run[-1].section_single_configuration_calculation[0]
-    dos = scc.section_dos[-1]
+    dos = scc.dos_electronic[-1]
     energies = dos.dos_energies.to(ureg.electron_volt).magnitude
-    values = dos.dos_values
+    values = np.array([d.dos_values for d in dos.dos_total])
 
     # Check that an energy reference is reported
     energy_reference = scc.energy_reference_fermi
@@ -198,13 +198,11 @@ def test_outcar(parser):
     assert np.shape(sec_eigs.eigenvalues_values) == (1, 145, 15)
     assert sec_eigs.eigenvalues_values[0][9][14].magnitude == approx(1.41810256e-18)
     assert sec_eigs.eigenvalues_occupation[0][49][9] == 2.0
-    sec_dos = sec_scc.section_dos[0]
+    sec_dos = sec_scc.dos_electronic[0]
     assert len(sec_dos.dos_energies) == 301
-    assert sec_dos.dos_integrated_values[0][-1] == 30.0
-    assert sec_dos.dos_energies[2].magnitude == approx(-5.0332379e-18)
-    assert len(sec_dos.dos_lm) == 16
-    assert sec_dos.dos_values_lm[5][0][0][-15] == approx(1.51481425e+17)
-    assert sec_dos.dos_values_lm[2][0][1][-16] == approx(1.71267009e+16)
+    assert sec_dos.dos_total[0].dos_integrated[-1] == 30.0
+    assert sec_dos.dos_atom_projected[10].dos_values[-15] == approx(1.51481425e+17)
+    assert sec_dos.dos_atom_projected[5].dos_values[-16] == approx(1.71267009e+16)
 
 
 def test_broken_xml(parser):

@@ -45,7 +45,7 @@ from nomad.parsing.file_parser import FileParser
 from nomad.parsing.file_parser.text_parser import TextParser, Quantity
 from nomad.datamodel.metainfo.common_dft import Run, Method, XCFunctionals,\
     SingleConfigurationCalculation, ScfIteration, MethodAtomKind, System, Eigenvalues,\
-    KBand, KBandSegment, Dos, BasisSetCellDependent, MethodBasisSet, SamplingMethod
+    KBand, KBandSegment, Dos, DosValues, BasisSetCellDependent, MethodBasisSet, SamplingMethod
 
 
 def get_key_values(val_in):
@@ -1300,20 +1300,28 @@ class VASPParser(FairdiParser):
             # total dos
             if values is not None:
                 sec_scc = sec_run.section_single_configuration_calculation[-1]
-                sec_dos = sec_scc.m_create(Dos)
+                sec_dos = sec_scc.m_create(Dos, SingleConfigurationCalculation.dos_electronic)
                 sec_dos.dos_energies = energies * ureg.eV
 
-                sec_dos.dos_values = (values / ureg.eV).to('1/joule').magnitude
-                sec_dos.dos_integrated_values = integrated
+                for spin in range(len(values)):
+                    sec_dos_values = sec_dos.m_create(DosValues, Dos.dos_total)
+                    sec_dos_values.dos_values = (values[spin] / ureg.eV).to('1/joule').magnitude
+                    sec_dos_values.dos_integrated = integrated[spin]
 
-                sec_dos.energy_reference_fermi = ([e_fermi] * self.parser.ispin) * ureg.eV
+                sec_dos.dos_energies_shift = e_fermi * ureg.eV
 
                 # partial dos
                 dos, fields = self.parser.get_partial_dos(n_calc)
                 if dos is not None:
-                    sec_dos.dos_values_lm = (dos / ureg.eV).to('1/joule').magnitude
-                    sec_dos.dos_lm = [lm_converter.get(field, [-1, -1]) for field in fields]
-                    sec_dos.dos_m_kind = 'polynomial'
+                    for lm in range(len(dos)):
+                        for spin in range(len(dos[lm])):
+                            for atom in range(len(dos[lm][spin])):
+                                sec_dos_values = sec_dos.m_create(DosValues, Dos.dos_atom_projected)
+                                sec_dos_values.dos_m_kind = 'polynomial'
+                                sec_dos_values.dos_lm = lm_converter.get(fields[lm], [-1, -1])
+                                sec_dos_values.dos_spin = spin
+                                sec_dos_values.dos_atom_index = atom
+                                sec_dos_values.dos_values = (dos[lm][spin][atom] / ureg.eV).to('1/joule').magnitude
 
         for n in range(self.parser.n_calculations):
             # energies
