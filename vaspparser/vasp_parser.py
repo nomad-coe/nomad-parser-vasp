@@ -44,8 +44,9 @@ from nomad.parsing import FairdiParser
 from nomad.parsing.file_parser import FileParser
 from nomad.parsing.file_parser.text_parser import TextParser, Quantity
 from nomad.datamodel.metainfo.common_dft import Run, Method, XCFunctionals,\
-    SingleConfigurationCalculation, ScfIteration, MethodAtomKind, System, Eigenvalues,\
-    KBand, KBandSegment, Dos, DosValues, BasisSetCellDependent, MethodBasisSet, SamplingMethod
+    SingleConfigurationCalculation, ScfIteration, MethodAtomKind, System, BandEnergies,\
+    BandEnergiesValues, BandStructure, Dos, DosValues, BasisSetCellDependent, MethodBasisSet,\
+    SamplingMethod
 
 
 def get_key_values(val_in):
@@ -1244,10 +1245,10 @@ class VASPParser(FairdiParser):
                 return
 
             sec_scc = sec_run.section_single_configuration_calculation[-1]
-            sec_eigenvalues = sec_scc.m_create(Eigenvalues)
             eigenvalues = np.transpose(eigenvalues)
             eigs = eigenvalues[0].T
             occs = eigenvalues[1].T
+            kpoints = self.parser.kpoints_info.get('k_mesh_points', [])
 
             # get valence(conduction) and maximum(minimum)
             # we have a case where no band is occupied, i.e. valence_max should be below
@@ -1263,29 +1264,41 @@ class VASPParser(FairdiParser):
 
             if self.parser.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
                 # I removed normalization since imho it should be done by normalizer
-                sec_k_band = sec_scc.m_create(KBand)
+                sec_k_band = sec_scc.m_create(BandStructure, SingleConfigurationCalculation.band_structure_electronic)
+                sec_k_band.band_structure_highest_occupied_energy = valence_max * ureg.eV
+                sec_k_band.band_structure_lowest_unoccupied_energy = conduction_min * ureg.eV
                 divisions = self.parser.kpoints_info.get('divisions', None)
                 if divisions is None:
                     return
-                kpoints = self.parser.kpoints_info.get('k_mesh_points', [])
                 n_segments = len(kpoints) // divisions
                 kpoints = np.reshape(kpoints, (n_segments, divisions, 3))
                 eigs = np.reshape(eigs, (
                     self.parser.ispin, n_segments, divisions, self.parser.n_bands))
                 occs = np.reshape(occs, (
                     self.parser.ispin, n_segments, divisions, self.parser.n_bands))
-                eigs = np.transpose(eigs, axes=(1, 0, 2, 3))
+                eigs = np.transpose(eigs, axes=(1, 0, 2, 3)) * ureg.eV
                 occs = np.transpose(occs, axes=(1, 0, 2, 3))
                 for n in range(n_segments):
-                    sec_k_band_segment = sec_k_band.m_create(KBandSegment)
-                    sec_k_band_segment.band_energies = eigs[n] * ureg.eV
-                    sec_k_band_segment.band_occupations = occs[n]
+                    sec_k_band_segment = sec_k_band.m_create(BandEnergies)
                     sec_k_band_segment.band_k_points = kpoints[n]
-                    sec_k_band_segment.band_segm_start_end = np.asarray(
-                        [kpoints[n, 0], kpoints[n, divisions - 1]])
+                    for spin in range(len(eigs[n])):
+                        for kpt in range(len(eigs[n][spin])):
+                            sec_band_energies = sec_k_band_segment.m_create(BandEnergiesValues)
+                            sec_band_energies.band_energies_spin = spin
+                            sec_band_energies.band_energies_kpoints_index = kpt
+                            sec_band_energies.band_energies_values = eigs[n][spin][kpt]
+                            sec_band_energies.band_energies_occupations = occs[n][spin][kpt]
             else:
-                sec_eigenvalues.eigenvalues_values = eigs * ureg.eV
-                sec_eigenvalues.eigenvalues_occupation = occs
+                eigs = eigs * ureg.eV
+                sec_eigenvalues = sec_scc.m_create(BandEnergies)
+                sec_eigenvalues.band_energies_kpoints = kpoints
+                for spin in range(len(eigs)):
+                    for kpt in range(len(eigs[spin])):
+                        sec_eigenvalues_values = sec_eigenvalues.m_create(BandEnergiesValues)
+                        sec_eigenvalues_values.band_energies_spin = spin
+                        sec_eigenvalues_values.band_energies_spin = kpt
+                        sec_eigenvalues_values.band_energies_values = eigs[spin][kpt]
+                        sec_eigenvalues_values.band_energies_occupations = occs[spin][kpt]
 
         def parse_dos(n_calc):
             energies, values, integrated, e_fermi = self.parser.get_total_dos(n_calc)

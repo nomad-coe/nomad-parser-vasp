@@ -79,7 +79,7 @@ def test_vasprunxml_static(parser):
     assert len(sec_scc.dos_electronic[0].dos_energies) == 5000
     assert len(sec_scc.dos_electronic[0].dos_atom_projected) == 9
     assert sec_scc.dos_electronic[0].dos_atom_projected[0].dos_values[-1] == approx(3.40162245e+17)
-    assert np.shape(sec_scc.section_eigenvalues[0].eigenvalues_values) == (1, 888, 37)
+    assert np.shape(sec_scc.eigenvalues[0].band_energies[887].band_energies_values) == (37,)
     assert sec_scc.section_scf_iteration[2].energy_total_T0_scf_iteration.magnitude == approx(-2.27580485e-19,)
 
 
@@ -101,7 +101,7 @@ def test_vasprunxml_relax(parser):
     assert sec_sccs[2].stress_tensor[2][2].magnitude == approx(-2.02429105e+08)
     assert sec_sccs[2].energy_reference_lowest_unoccupied[0].magnitude == approx(7.93718304e-19)
     assert sec_sccs[2].energy_reference_highest_occupied[1].magnitude == approx(7.93702283e-19)
-    assert [len(scc.section_eigenvalues) for scc in sec_sccs] == [0, 0, 1]
+    assert [len(scc.eigenvalues) for scc in sec_sccs] == [0, 0, 1]
     assert [len(scc.dos_electronic) for scc in sec_sccs] == [0, 0, 1]
 
 
@@ -109,20 +109,23 @@ def test_vasprunxml_bands(parser):
     archive = EntryArchive()
     parser.parse('tests/data/vasprun.xml.bands', archive, None)
 
-    sec_k_band = archive.section_run[0].section_single_configuration_calculation[0].section_k_band[0]
-    assert len(sec_k_band.section_k_band_segment) == 6
-    assert np.shape(sec_k_band.section_k_band_segment[0].band_energies.magnitude) == (1, 128, 37)
-    assert sec_k_band.section_k_band_segment[1].band_energies[0][1][1].magnitude == approx(-6.27128785e-18)
-    assert sec_k_band.section_k_band_segment[5].band_occupations[0][127][5] == 0.0
+    sec_k_band = archive.section_run[0].section_single_configuration_calculation[0].band_structure_electronic[0]
+    assert len(sec_k_band.band_structure_segment) == 6
+    assert np.shape(sec_k_band.band_structure_segment[0].band_energies[127].band_energies_values.magnitude) == (37,)
+    assert sec_k_band.band_structure_segment[1].band_energies[1].band_energies_values[1].magnitude == approx(-6.27128785e-18)
+    assert sec_k_band.band_structure_segment[5].band_energies[127].band_energies_occupations[5] == 0.0
 
 
 def test_band_silicon(silicon_band):
     """Tests that the band structure of silicon is parsed correctly.
     """
     scc = silicon_band.section_run[-1].section_single_configuration_calculation[0]
-    band = scc.section_k_band[-1]
-    segments = band.section_k_band_segment
-    energies = np.array([s.band_energies.to(ureg.electron_volt).magnitude for s in segments])
+    band = scc.band_structure_electronic[-1]
+    segments = band.band_structure_segment
+    energies = []
+    for segment in segments:
+        energies.append([b.band_energies_values.to(ureg.electron_volt).magnitude for b in segment.band_energies])
+    energies = np.array(energies)
 
     # Check that an energy reference is reported
     energy_reference = scc.energy_reference_fermi
@@ -194,10 +197,10 @@ def test_outcar(parser):
     assert len(sec_scfs) == 11
     assert sec_scfs[4].energy_total_scf_iteration.magnitude == approx(-1.20437432e-18)
     assert sec_scfs[7].energy_sum_eigenvalues_scf_iteration.magnitude == approx(-1.61008452e-17)
-    sec_eigs = sec_scc.section_eigenvalues[0]
-    assert np.shape(sec_eigs.eigenvalues_values) == (1, 145, 15)
-    assert sec_eigs.eigenvalues_values[0][9][14].magnitude == approx(1.41810256e-18)
-    assert sec_eigs.eigenvalues_occupation[0][49][9] == 2.0
+    sec_eigs = sec_scc.eigenvalues[0]
+    assert np.shape(sec_eigs.band_energies[144].band_energies_values) == (15,)
+    assert sec_eigs.band_energies[9].band_energies_values[14].magnitude == approx(1.41810256e-18)
+    assert sec_eigs.band_energies[49].band_energies_occupations[9] == 2.0
     sec_dos = sec_scc.dos_electronic[0]
     assert len(sec_dos.dos_energies) == 301
     assert sec_dos.dos_total[0].dos_integrated[-1] == 30.0
