@@ -578,7 +578,9 @@ class OutcarContentParser(ContentParser):
         # DOSCAR fomat (spin) energy dos_up dos_down integrated_up integrated_down
         dos = np.transpose(dos)
         dos_energies = dos[0]
-        dos_values = dos[1: 1 + self.ispin]
+        cell = self.get_structure(n_calc)['cell']
+        volume = np.abs(np.linalg.det(cell.magnitude))
+        dos_values = dos[1: 1 + self.ispin] * volume
         dos_integrated = dos[1 + self.ispin: 2 * self.ispin + 1]
 
         return dos_energies, dos_values, dos_integrated, e_fermi
@@ -1038,7 +1040,7 @@ class RunContentParser(ContentParser):
 
         # unit of dos in vasprun is states/eV/cell
         cell = self.get_structure(n_calc)['cell']
-        volume = np.abs(np.linalg.det(cell.to('m').magnitude))
+        volume = np.abs(np.linalg.det(cell.magnitude))
         dos_values *= volume
 
         e_fermi = self._get_key_values(
@@ -1301,7 +1303,7 @@ class VASPParser(FairdiParser):
                         sec_eigenvalues_values.band_energies_occupations = occs[spin][kpt]
 
         def parse_dos(n_calc):
-            energies, values, integrated, e_fermi = self.parser.get_total_dos(n_calc)
+            energies, values, integrated, _ = self.parser.get_total_dos(n_calc)
 
             # TODO: I do not know how the f-orbitals are arranged
             lm_converter = {
@@ -1314,14 +1316,12 @@ class VASPParser(FairdiParser):
             if values is not None:
                 sec_scc = sec_run.section_single_configuration_calculation[-1]
                 sec_dos = sec_scc.m_create(Dos, SingleConfigurationCalculation.dos_electronic)
-                sec_dos.dos_energies = energies * ureg.eV
+                sec_dos.energies = energies * ureg.eV
 
                 for spin in range(len(values)):
-                    sec_dos_values = sec_dos.m_create(DosValues, Dos.dos_total)
-                    sec_dos_values.dos_values = (values[spin] / ureg.eV).to('1/joule').magnitude
-                    sec_dos_values.dos_integrated = integrated[spin]
-
-                sec_dos.dos_energies_shift = e_fermi * ureg.eV
+                    sec_dos_values = sec_dos.m_create(DosValues, Dos.total)
+                    sec_dos_values.value = values[spin] / ureg.eV
+                    sec_dos_values.value_integrated = integrated[spin]
 
                 # partial dos
                 dos, fields = self.parser.get_partial_dos(n_calc)
@@ -1329,12 +1329,12 @@ class VASPParser(FairdiParser):
                     for lm in range(len(dos)):
                         for spin in range(len(dos[lm])):
                             for atom in range(len(dos[lm][spin])):
-                                sec_dos_values = sec_dos.m_create(DosValues, Dos.dos_atom_projected)
-                                sec_dos_values.dos_m_kind = 'polynomial'
-                                sec_dos_values.dos_lm = lm_converter.get(fields[lm], [-1, -1])
-                                sec_dos_values.dos_spin = spin
-                                sec_dos_values.dos_atom_index = atom
-                                sec_dos_values.dos_values = (dos[lm][spin][atom] / ureg.eV).to('1/joule').magnitude
+                                sec_dos_values = sec_dos.m_create(DosValues, Dos.atom_projected)
+                                sec_dos_values.m_kind = 'polynomial'
+                                sec_dos_values.lm = lm_converter.get(fields[lm], [-1, -1])
+                                sec_dos_values.spin = spin
+                                sec_dos_values.atom_index = atom
+                                sec_dos_values.value = dos[lm][spin][atom] / ureg.eV
 
         for n in range(self.parser.n_calculations):
             # energies
