@@ -46,7 +46,7 @@ from nomad.parsing.file_parser.text_parser import TextParser, Quantity
 from nomad.datamodel.metainfo.common_dft import Run, Method, XCFunctionals,\
     SingleConfigurationCalculation, ScfIteration, MethodAtomKind, System, BandEnergies,\
     BandEnergiesValues, BandStructure, ChannelInfo, Dos, DosValues, BasisSetCellDependent,\
-    MethodBasisSet, SamplingMethod
+    MethodBasisSet, SamplingMethod, Energy, Forces, Stress
 
 
 def get_key_values(val_in):
@@ -99,10 +99,10 @@ class ContentParser:
         self._n_dos = None
         self.metainfo_mapping = {
             'e_fr_energy': 'energy_free', 'e_wo_entrp': 'energy_total',
-            'e_0_energy': 'energy_total_T0', 'hartreedc': 'energy_hartree_error',
+            'e_0_energy': 'energy_total_T0', 'hartreedc': 'energy_correction_hartree',
             'XCdc': 'energy_XC', 'forces': 'atom_forces', 'stress': 'stress_tensor',
             'energy_total': 'energy_free', 'energy_T0': 'energy_total_T0',
-            'energy_entropy0': 'energy_total', 'DENC': 'energy_hartree_error',
+            'energy_entropy0': 'energy_total', 'DENC': 'energy_correction_hartree',
             'EXHF': 'energy_X', 'EBANDS': 'energy_sum_eigenvalues'}
 
         self.xc_functional_mapping = {
@@ -1235,7 +1235,11 @@ class VASPParser(FairdiParser):
                 val = val * ureg.eV
 
                 try:
-                    setattr(section, '%s%s' % (metainfo_key, ext), val)
+                    if not ext and metainfo_key.startswith('energy_'):
+                        section.m_add_sub_section(getattr(
+                            SingleConfigurationCalculation, metainfo_key), Energy(value=val))
+                    else:
+                        setattr(section, '%s%s' % (metainfo_key, ext), val)
                 except Exception:
                     self.logger.warn('Error setting metainfo', data=dict(key=key))
 
@@ -1347,13 +1351,15 @@ class VASPParser(FairdiParser):
             forces, stress = self.parser.get_forces_stress(n)
             if forces is not None:
                 try:
-                    sec_scc.atom_forces = forces * ureg.eV / ureg.angstrom
+                    sec_scc.m_add_sub_section(SingleConfigurationCalculation.forces_total, Forces(
+                        value=forces * ureg.eV / ureg.angstrom))
                 except Exception:
                     self.logger.error('Error parsing forces.')
             if stress is not None:
                 try:
                     # TODO verify if stress unit in xml is also kbar
-                    sec_scc.stress_tensor = stress * ureg.kbar
+                    sec_scc.m_add_sub_section(SingleConfigurationCalculation.stress_total, Stress(
+                        value=stress * ureg.kbar))
                 except Exception:
                     self.logger.error('Error parsing stress.')
 
