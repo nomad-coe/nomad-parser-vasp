@@ -45,7 +45,7 @@ from nomad.parsing.file_parser import FileParser
 from nomad.parsing.file_parser.text_parser import TextParser, Quantity
 from nomad.datamodel.metainfo.common_dft import Run, Method, XCFunctionals,\
     SingleConfigurationCalculation, ScfIteration, MethodAtomKind, System, BandEnergies,\
-    BandEnergiesValues, BandStructure, ChannelInfo, Dos, DosValues, BasisSetCellDependent,\
+    BandStructure, ChannelInfo, Dos, DosValues, BasisSetCellDependent,\
     MethodBasisSet, SamplingMethod, Energy, Forces, Stress
 
 
@@ -1288,24 +1288,14 @@ class VASPParser(FairdiParser):
                 for n in range(n_segments):
                     sec_k_band_segment = sec_k_band.m_create(BandEnergies)
                     sec_k_band_segment.band_k_points = kpoints[n]
-                    for spin in range(len(eigs[n])):
-                        for kpt in range(len(eigs[n][spin])):
-                            sec_band_energies = sec_k_band_segment.m_create(BandEnergiesValues)
-                            sec_band_energies.spin = spin
-                            sec_band_energies.kpoints_index = kpt
-                            sec_band_energies.value = eigs[n][spin][kpt]
-                            sec_band_energies.occupations = occs[n][spin][kpt]
+                    sec_k_band_segment.value = eigs[n]
+                    sec_k_band_segment.occupations = occs[n]
             else:
                 eigs = eigs * ureg.eV
                 sec_eigenvalues = sec_scc.m_create(BandEnergies)
                 sec_eigenvalues.kpoints = kpoints
-                for spin in range(len(eigs)):
-                    for kpt in range(len(eigs[spin])):
-                        sec_eigenvalues_values = sec_eigenvalues.m_create(BandEnergiesValues)
-                        sec_eigenvalues_values.spin = spin
-                        sec_eigenvalues_values.kpoints_index = kpt
-                        sec_eigenvalues_values.value = eigs[spin][kpt]
-                        sec_eigenvalues_values.occupations = occs[spin][kpt]
+                sec_eigenvalues.value = eigs
+                sec_eigenvalues.occupations = occs
 
         def parse_dos(n_calc):
             energies, values, integrated, _ = self.parser.get_total_dos(n_calc)
