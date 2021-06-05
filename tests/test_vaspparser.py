@@ -81,7 +81,7 @@ def test_vasprunxml_static(parser):
     assert len(sec_scc.dos_electronic[0].atom_projected) == 9
     assert sec_scc.dos_electronic[0].atom_projected[0].value[-1].magnitude == approx(3.40162245e+17)
     assert np.shape(sec_scc.eigenvalues[0].value[0][887]) == (37,)
-    assert sec_scc.section_scf_iteration[2].energy_total_T0_scf_iteration.magnitude == approx(-2.27580485e-19,)
+    assert sec_scc.scf_iteration[2].energy_total_T0.value.magnitude == approx(-2.27580485e-19,)
 
 
 def test_vasprunxml_relax(parser):
@@ -96,7 +96,7 @@ def test_vasprunxml_relax(parser):
 
     sec_sccs = archive.section_run[0].section_single_configuration_calculation
     assert len(sec_sccs) == 3
-    assert [len(scc.section_scf_iteration) for scc in sec_sccs] == [12, 10, 6]
+    assert [len(scc.scf_iteration) for scc in sec_sccs] == [12, 10, 6]
     assert sec_sccs[0].energy_free.value.magnitude == approx(-1.14352735e-18)
     assert np.mean(sec_sccs[1].forces_total.value.magnitude) == 0.0
     assert sec_sccs[2].stress_total.value[2][2].magnitude == approx(-2.02429105e+08)
@@ -191,10 +191,10 @@ def test_outcar(parser):
     assert sec_scc.stress_total.value[0][0].magnitude == approx(7.060258e+09)
     assert sec_scc.energy_reference_lowest_unoccupied[0].magnitude == approx(9.40461662e-19)
     assert sec_scc.energy_reference_highest_occupied[0].magnitude == approx(9.51212268e-19)
-    sec_scfs = sec_scc.section_scf_iteration
+    sec_scfs = sec_scc.scf_iteration
     assert len(sec_scfs) == 11
-    assert sec_scfs[4].energy_total_scf_iteration.magnitude == approx(-1.20437432e-18)
-    assert sec_scfs[7].energy_sum_eigenvalues_scf_iteration.magnitude == approx(-1.61008452e-17)
+    assert sec_scfs[4].energy_total.value.magnitude == approx(-1.20437432e-18)
+    assert sec_scfs[7].energy_sum_eigenvalues.value.magnitude == approx(-1.61008452e-17)
     sec_eigs = sec_scc.eigenvalues[0]
     assert np.shape(sec_eigs.value[0][144]) == (15,)
     assert sec_eigs.value[0][9][14].magnitude == approx(1.41810256e-18)

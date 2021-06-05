@@ -1221,10 +1221,8 @@ class VASPParser(FairdiParser):
         def parse_energy(n_calc, n_scf=None):
             if n_scf is None:
                 section = sec_run.m_create(SingleConfigurationCalculation)
-                ext = ''
             else:
                 section = sec_run.section_single_configuration_calculation[-1].m_create(ScfIteration)
-                ext = '_scf_iteration'
 
             energies = self.parser.get_energies(n_calc, n_scf)
             for key, val in energies.items():
@@ -1235,11 +1233,11 @@ class VASPParser(FairdiParser):
                 val = val * ureg.eV
 
                 try:
-                    if not ext and metainfo_key.startswith('energy_'):
+                    if metainfo_key.startswith('energy_'):
                         section.m_add_sub_section(getattr(
                             SingleConfigurationCalculation, metainfo_key), Energy(value=val))
                     else:
-                        setattr(section, '%s%s' % (metainfo_key, ext), val)
+                        setattr(section, metainfo_key, val)
                 except Exception:
                     self.logger.warn('Error setting metainfo', data=dict(key=key))
 
