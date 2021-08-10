@@ -22,16 +22,9 @@ from nomad.metainfo import (  # pylint: disable=unused-import
     MSection, MCategory, Category, Package, Quantity, Section, SubSection, SectionProxy,
     Reference
 )
-from nomad.metainfo.legacy import LegacyDefinition
-
 from vaspparser.metainfo import vasp_incars
-from nomad.datamodel.metainfo import public
 from vaspparser.metainfo import vasp_incarsOut
-
-m_package = Package(
-    name='vasp_incarsUnknown_nomadmetainfo_json',
-    description='None',
-    a_legacy=LegacyDefinition(name='vasp.incarsUnknown.nomadmetainfo.json'))
+from nomad.datamodel.metainfo import run
 
 
 class x_vasp_incarUnknown_param(MCategory):
@@ -41,13 +34,12 @@ class x_vasp_incarUnknown_param(MCategory):
     (Oct.2019) VaspWiki
     '''
 
-    m_def = Category(
-        a_legacy=LegacyDefinition(name='x_vasp_incarUnknown_param'))
+    m_def = Category()
 
 
-class section_method(public.section_method):
+class Method(run.method.Method):
 
-    m_def = Section(validate=False, extends_base_section=True, a_legacy=LegacyDefinition(name='section_method'))
+    m_def = Section(validate=False, extends_base_section=True)
 
     x_vasp_incarOut_ENMAX = Quantity(
         type=np.dtype(np.float64),
@@ -56,8 +48,7 @@ class section_method(public.section_method):
         Maximum cutoff (normally specified only in POTCAR). Value prinded out after
         evaluating the input.
         ''',
-        categories=[vasp_incarsOut.x_vasp_incarOut_param],
-        a_legacy=LegacyDefinition(name='x_vasp_incarOut_ENMAX'))
+        categories=[vasp_incarsOut.x_vasp_incarOut_param])
 
     x_vasp_incar_ENMAX = Quantity(
         type=np.dtype(np.float64),
@@ -66,8 +57,7 @@ class section_method(public.section_method):
         Maximum cutoff (normally specified only in POTCAR). Value prinded out after
         evaluating the input.
         ''',
-        categories=[vasp_incars.x_vasp_incar_param],
-        a_legacy=LegacyDefinition(name='x_vasp_incar_ENMAX'))
+        categories=[vasp_incars.x_vasp_incar_param])
 
     x_vasp_incarOut_LCOMPAT = Quantity(
         type=bool,
@@ -78,8 +68,4 @@ class section_method(public.section_method):
         (usually differences are smaller than 0.01 meV). The old behavior can be restored
         by setting LCOMPAT = .TRUE. in the INCAR file.
         ''',
-        categories=[vasp_incarsOut.x_vasp_incarOut_param],
-        a_legacy=LegacyDefinition(name='x_vasp_incarOut_LCOMPAT'))
-
-
-m_package.__init_metainfo__()
+        categories=[vasp_incarsOut.x_vasp_incarOut_param])

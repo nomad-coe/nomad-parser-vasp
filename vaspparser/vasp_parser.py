@@ -38,15 +38,23 @@ import ase
 import re
 from xml.sax import ContentHandler, make_parser  # type: ignore
 
-from .metainfo import m_env
 from nomad.units import ureg
 from nomad.parsing import FairdiParser
 from nomad.parsing.file_parser import FileParser
 from nomad.parsing.file_parser.text_parser import TextParser, Quantity
-from nomad.datamodel.metainfo.common_dft import Run, Method, XCFunctionals,\
-    SingleConfigurationCalculation, ScfIteration, MethodAtomKind, System, BandEnergies,\
-    BandStructure, ChannelInfo, Dos, DosValues, BasisSetCellDependent,\
-    MethodBasisSet, SamplingMethod, Energy, Forces, Stress
+from nomad.datamodel.metainfo.run.run import Run, Program
+from nomad.datamodel.metainfo.run.method import (
+    Method, BasisSet, BasisSetCellDependent, DFT, AtomParameters, MethodReference, XCFunctional,
+    Functional
+)
+from nomad.datamodel.metainfo.run.system import (
+    System, Atoms, SystemReference
+)
+from nomad.datamodel.metainfo.run.calculation import (
+    Calculation, Energy, EnergyEntry, Forces, ForcesEntry, Stress, StressEntry,
+    BandEnergies, DosValues, ScfIteration, BandStructure, ElectronicStructureInfo, Dos
+)
+from nomad.datamodel.metainfo.workflow import Workflow, GeometryOptimization
 
 
 def get_key_values(val_in):
@@ -103,7 +111,7 @@ class ContentParser:
             'XCdc': 'energy_XC', 'forces': 'atom_forces', 'stress': 'stress_tensor',
             'energy_total': 'energy_free', 'energy_T0': 'energy_total_T0',
             'energy_entropy0': 'energy_total', 'DENC': 'energy_correction_hartree',
-            'EXHF': 'energy_X', 'EBANDS': 'energy_sum_eigenvalues'}
+            'EXHF': 'energy_exchange', 'EBANDS': 'energy_sum_eigenvalues'}
 
         self.xc_functional_mapping = {
             '91': ['GGA_X_PW91', 'GGA_C_PW91'], 'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
@@ -1086,7 +1094,6 @@ class VASPParser(FairdiParser):
                 r'?|^\svasp[\.\d]+.+?\s*(?:\(build|complex)'),
             supported_compressions=['gz', 'bz2', 'xz'], mainfile_alternative=True)
 
-        self._metainfo_env = m_env
         self._vasprun_parser = RunContentParser()
         self._outcar_parser = OutcarContentParser()
 
@@ -1095,7 +1102,7 @@ class VASPParser(FairdiParser):
         self.parser.init_parser(filepath, logger)
 
     def parse_incarsout(self):
-        sec_method = self.archive.section_run[-1].section_method[-1]
+        sec_method = self.archive.run[-1].method[-1]
 
         incar_parameters = self.parser.get_incar_out()
         for key, val in incar_parameters.items():
@@ -1109,16 +1116,15 @@ class VASPParser(FairdiParser):
                 incar=incar_parameters))
 
         prec = 1.3 if 'acc' in self.parser.incar.get('PREC', '') else 1.0
-        sec_basis_set_cell_dependent = self.archive.section_run[-1].m_create(
-            BasisSetCellDependent)
-        sec_basis_set_cell_dependent.basis_set_planewave_cutoff = self.parser.incar.get(
+        sec_basis = sec_method.m_create(BasisSet)
+        sec_basis_set_cell_dependent = sec_basis.m_create(BasisSetCellDependent)
+        sec_basis_set_cell_dependent.kind = 'plane waves'
+        sec_basis_set_cell_dependent.planewave_cutoff = self.parser.incar.get(
             'ENMAX', self.parser.incar.get('ENCUT', 0.0)) * prec * ureg.eV
 
-        sec_method_basis_set = sec_method.m_create(MethodBasisSet)
-        sec_method_basis_set.mapping_section_method_basis_set_cell_associated = sec_basis_set_cell_dependent
-
     def parse_method(self):
-        sec_method = self.archive.section_run[-1].m_create(Method)
+        sec_method = self.archive.run[-1].m_create(Method)
+        sec_dft = sec_method.m_create(DFT)
 
         # input incar
         incar_parameters = self.parser.get_incar()
@@ -1148,64 +1154,72 @@ class VASPParser(FairdiParser):
         element = atomtypes.get('element', [])
         atom_counts = {e: 0 for e in element}
         for i in range(len(element)):
-            sec_method_atom_kind = sec_method.m_create(MethodAtomKind)
+            sec_method_atom_kind = sec_method.m_create(AtomParameters)
             atom_number = ase.data.atomic_numbers.get(element[i], 0)
-            sec_method_atom_kind.method_atom_kind_atom_number = atom_number
+            sec_method_atom_kind.atom_number = atom_number
             atom_label = '%s%d' % (
                 element[i], atom_counts[element[i]]) if atom_counts[element[i]] > 0 else element[i]
-            sec_method_atom_kind.method_atom_kind_label = str(atom_label)
-            sec_method_atom_kind.method_atom_kind_mass = atomtypes.get('mass', [1] * (i + 1))[i] * ureg.amu
-            sec_method_atom_kind.method_atom_kind_explicit_electrons = atomtypes.get(
+            sec_method_atom_kind.label = str(atom_label)
+            sec_method_atom_kind.mass = atomtypes.get('mass', [1] * (i + 1))[i] * ureg.amu
+            sec_method_atom_kind.n_valence_electrons = atomtypes.get(
                 'valence', [0] * (i + 1))[i]
             pseudopotential = atomtypes.get('pseudopotential')[i]
             pseudopotential = ' '.join(pseudopotential) if isinstance(
                 pseudopotential, list) else pseudopotential
-            sec_method_atom_kind.method_atom_kind_pseudopotential_name = str(pseudopotential)
+            sec_method_atom_kind.pseudopotential_name = str(pseudopotential)
             atom_counts[element[i]] += 1
-        sec_method.x_vasp_atom_kind_refs = sec_method.section_method_atom_kind
+        sec_method.x_vasp_atom_kind_refs = sec_method.atom_parameters
 
         self.parse_incarsout()
 
         gga = self.parser.incar.get('GGA', None)
+        sec_xc_functional = sec_dft.m_create(XCFunctional)
         if gga is not None:
             xc_functionals = self.parser.xc_functional_mapping.get(gga, [])
             for xc_functional in xc_functionals:
-                sec_xc_functional = sec_method.m_create(XCFunctionals)
-                sec_xc_functional.XC_functional_name = xc_functional
+                if '_X_' in xc_functional or xc_functional.endswith('_X'):
+                    sec_xc_functional.exchange.append(Functional(name=xc_functional))
+                elif '_C_' in xc_functional or xc_functional.endswith('_C'):
+                    sec_xc_functional.correlation.append(Functional(name=xc_functional))
+                elif 'HYB' in xc_functional:
+                    sec_xc_functional.hybrid.append(Functional(name=xc_functional))
+                else:
+                    sec_xc_functional.contributions.append(Functional(name=xc_functional))
 
         # convergence thresholds
         tolerance = self.parser.incar.get('EDIFF')
         if tolerance is not None:
             sec_method.scf_threshold_energy_change = tolerance * ureg.eV
 
-    def parse_sampling_method(self):
-        sec_sampling_method = self.archive.section_run[-1].m_create(SamplingMethod)
+    def parse_workflow(self):
+        sec_workflow = self.archive.m_create(Workflow)
 
         tolerance = self.parser.incar.get('EDIFFG')
         if tolerance is not None:
+            sec_geometry_opt = sec_workflow.m_create(GeometryOptimization)
             if tolerance > 0:
-                sec_sampling_method.geometry_optimization_energy_change = tolerance * ureg.eV
+                sec_geometry_opt.input_energy_difference_tolerance = tolerance * ureg.eV
             else:
-                sec_sampling_method.geometry_optimization_threshold_force = abs(tolerance) * ureg.eV / ureg.angstrom
+                sec_geometry_opt.input_force_maximum_tolerance = abs(tolerance) * ureg.eV / ureg.angstrom
 
     def parse_configurations(self):
-        sec_run = self.archive.section_run[-1]
+        sec_run = self.archive.run[-1]
 
         def parse_system(n_calc):
             sec_system = sec_run.m_create(System)
+            sec_atoms = sec_system.m_create(Atoms)
 
             structure = self.parser.get_structure(n_calc)
             cell = structure.get('cell', None)
             if cell is not None:
-                sec_system.simulation_cell = cell
-                sec_system.lattice_vectors = cell
+                sec_atoms.lattice_vectors = cell
 
-            sec_system.configuration_periodic_dimensions = [True] * 3
-            sec_system.atom_labels = self.parser.atom_info.get('atoms', {}).get('element', [])
+            sec_atoms.periodic = [True] * 3
+            sec_atoms.labels = self.parser.atom_info.get('atoms', {}).get('element', [])
 
             positions = structure.get('positions', None)
             if positions is not None:
-                sec_system.atom_positions = positions
+                sec_atoms.positions = positions
 
             selective = structure.get('selective', None)
             if selective is not None:
@@ -1220,11 +1234,12 @@ class VASPParser(FairdiParser):
 
         def parse_energy(n_calc, n_scf=None):
             if n_scf is None:
-                section = sec_run.m_create(SingleConfigurationCalculation)
+                section = sec_run.m_create(Calculation)
             else:
-                section = sec_run.section_single_configuration_calculation[-1].m_create(ScfIteration)
+                section = sec_run.calculation[-1].m_create(ScfIteration)
 
             energies = self.parser.get_energies(n_calc, n_scf)
+            sec_energy = section.m_create(Energy)
             for key, val in energies.items():
                 metainfo_key = self.parser.metainfo_mapping.get(key, None)
                 if val is None or metainfo_key is None:
@@ -1234,8 +1249,8 @@ class VASPParser(FairdiParser):
 
                 try:
                     if metainfo_key.startswith('energy_'):
-                        section.m_add_sub_section(getattr(
-                            SingleConfigurationCalculation, metainfo_key), Energy(value=val))
+                        sec_energy.m_add_sub_section(getattr(
+                            Energy, metainfo_key.replace('energy_', '').lower()), EnergyEntry(value=val))
                     else:
                         setattr(section, metainfo_key, val)
                 except Exception:
@@ -1248,7 +1263,7 @@ class VASPParser(FairdiParser):
             if eigenvalues is None:
                 return
 
-            sec_scc = sec_run.section_single_configuration_calculation[-1]
+            sec_scc = sec_run.calculation[-1]
             eigenvalues = np.transpose(eigenvalues)
             eigs = eigenvalues[0].T
             occs = eigenvalues[1].T
@@ -1263,13 +1278,13 @@ class VASPParser(FairdiParser):
                 valence_max.append(np.amin(eigs[i]) - 1.0 if not occupied else max(occupied))
                 unoccupied = [eigs[i, o[0], o[1]] for o in np.argwhere(occs[i] < 0.5)]
                 conduction_min.append(np.amin(eigs[i]) - 1.0 if not unoccupied else min(unoccupied))
-            sec_scc.energy_reference_highest_occupied = valence_max * ureg.eV
-            sec_scc.energy_reference_lowest_unoccupied = conduction_min * ureg.eV
+            sec_scc.energy.highest_occupied = valence_max * ureg.eV
+            sec_scc.energy.lowest_unoccupied = conduction_min * ureg.eV
 
             if self.parser.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
                 # I removed normalization since imho it should be done by normalizer
-                sec_k_band = sec_scc.m_create(BandStructure, SingleConfigurationCalculation.band_structure_electronic)
-                sec_energies_info = sec_k_band.m_create(ChannelInfo)
+                sec_k_band = sec_scc.m_create(BandStructure, Calculation.band_structure_electronic)
+                sec_energies_info = sec_k_band.m_create(ElectronicStructureInfo)
                 sec_energies_info.energy_highest_occupied = valence_max * ureg.eV
                 sec_energies_info.energy_lowest_unoccupied = conduction_min * ureg.eV
                 divisions = self.parser.kpoints_info.get('divisions', None)
@@ -1307,8 +1322,8 @@ class VASPParser(FairdiParser):
 
             # total dos
             if values is not None:
-                sec_scc = sec_run.section_single_configuration_calculation[-1]
-                sec_dos = sec_scc.m_create(Dos, SingleConfigurationCalculation.dos_electronic)
+                sec_scc = sec_run.calculation[-1]
+                sec_dos = sec_scc.m_create(Dos, Calculation.dos_electronic)
                 sec_dos.energies = energies * ureg.eV
 
                 for spin in range(len(values)):
@@ -1339,22 +1354,20 @@ class VASPParser(FairdiParser):
             forces, stress = self.parser.get_forces_stress(n)
             if forces is not None:
                 try:
-                    sec_scc.m_add_sub_section(SingleConfigurationCalculation.forces_total, Forces(
-                        value=forces * ureg.eV / ureg.angstrom))
+                    sec_scc.forces = Forces(total=ForcesEntry(value=forces * ureg.eV / ureg.angstrom))
                 except Exception:
                     self.logger.error('Error parsing forces.')
             if stress is not None:
                 try:
                     # TODO verify if stress unit in xml is also kbar
-                    sec_scc.m_add_sub_section(SingleConfigurationCalculation.stress_total, Stress(
-                        value=stress * ureg.kbar))
+                    sec_scc.stress = Stress(total=StressEntry(value=stress * ureg.kbar))
                 except Exception:
                     self.logger.error('Error parsing stress.')
 
             # structure
             sec_system = parse_system(n)
-            sec_scc.single_configuration_calculation_to_system_ref = sec_system
-            sec_scc.single_configuration_to_calculation_method_ref = sec_run.section_method[-1]
+            sec_scc.system_ref.append(SystemReference(value=sec_system))
+            sec_scc.method_ref.append(MethodReference(value=sec_run.method[-1]))
 
             # eigenvalues
             parse_eigenvalues(n)
@@ -1381,14 +1394,12 @@ class VASPParser(FairdiParser):
         if program_name.strip().upper() != 'VASP':
             self.logger.error('invalid program name', data=dict(program_name=program_name))
             return
-        sec_run.program_name = 'VASP'
+        sec_run.program = Program(name='VASP')
 
         version = ' '.join([self.parser.header.get(key, '') for key in [
             'version', 'subversion', 'platform']]).strip()
         if version:
-            sec_run.program_version = version
-
-        sec_run.program_basis_set_type = 'plane waves'
+            sec_run.program.version = version
 
         date = self.parser.header.get('date')
         if date is not None:
@@ -1396,10 +1407,10 @@ class VASPParser(FairdiParser):
             time = self.parser.header.get('time', '0:0:0')
             time = datetime.strptime(time.strip(), '%H:%M:%S').timetz()
             dtime = datetime.combine(date, time) - datetime.utcfromtimestamp(0)
-            sec_run.program_compilation_datetime = dtime.total_seconds()
+            sec_run.program.compilation_datetime = dtime.total_seconds()
 
         self.parse_method()
 
-        self.parse_sampling_method()
+        self.parse_workflow()
 
         self.parse_configurations()
