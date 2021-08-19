@@ -80,7 +80,7 @@ def test_vasprunxml_static(parser):
     assert sec_scc.dos_electronic[0].total[0].value[1838].magnitude == approx(1.94581094e+19)
     assert len(sec_scc.dos_electronic[0].atom_projected) == 9
     assert sec_scc.dos_electronic[0].atom_projected[0].value[-1].magnitude == approx(3.40162245e+17)
-    assert np.shape(sec_scc.eigenvalues[0].value[0][887]) == (37,)
+    assert np.shape(sec_scc.eigenvalues[0].energies[0][887]) == (37,)
     assert sec_scc.scf_iteration[2].energy.total_t0.value.magnitude == approx(-2.27580485e-19,)
 
 
@@ -111,10 +111,10 @@ def test_vasprunxml_bands(parser):
     parser.parse('tests/data/vasprun.xml.bands', archive, None)
 
     sec_k_band = archive.run[0].calculation[0].band_structure_electronic[0]
-    assert len(sec_k_band.band_structure_segment) == 6
-    assert np.shape(sec_k_band.band_structure_segment[0].value[0][127].magnitude) == (37,)
-    assert sec_k_band.band_structure_segment[1].value[0][1][1].magnitude == approx(-6.27128785e-18)
-    assert sec_k_band.band_structure_segment[5].occupations[0][127][5] == 0.0
+    assert len(sec_k_band.segment) == 6
+    assert np.shape(sec_k_band.segment[0].energies[0][127].magnitude) == (37,)
+    assert sec_k_band.segment[1].energies[0][1][1].magnitude == approx(-6.27128785e-18)
+    assert sec_k_band.segment[5].occupations[0][127][5] == 0.0
 
 
 def test_band_silicon(silicon_band):
@@ -122,8 +122,8 @@ def test_band_silicon(silicon_band):
     """
     scc = silicon_band.run[-1].calculation[0]
     band = scc.band_structure_electronic[-1]
-    segments = band.band_structure_segment
-    energies = np.array([s.value.to(ureg.electron_volt).magnitude for s in segments])
+    segments = band.segment
+    energies = np.array([s.energies.to(ureg.electron_volt).magnitude for s in segments])
 
     # Check that an energy reference is reported
     energy_reference = scc.energy.fermi
@@ -179,7 +179,7 @@ def test_outcar(parser):
     assert sec_method.basis_set[0].cell_dependent.planewave_cutoff.magnitude == approx(8.3313185e-17)
     assert sec_method.dft.xc_functional.exchange[0].name == 'GGA_X_PBE'
     assert len(sec_method.atom_parameters) == 2
-    assert sec_method.atom_parameters[1].pseudopotential_name == 'Ag'
+    assert sec_method.atom_parameters[1].pseudopotential_name == 'PAW_PBE'
 
     sec_system = sec_run.system[0]
     assert sec_system.atoms.lattice_vectors[1][0].magnitude == approx(3.141538e-10)
@@ -196,8 +196,8 @@ def test_outcar(parser):
     assert sec_scfs[4].energy.total.value.magnitude == approx(-1.20437432e-18)
     assert sec_scfs[7].energy.sum_eigenvalues.value.magnitude == approx(-1.61008452e-17)
     sec_eigs = sec_scc.eigenvalues[0]
-    assert np.shape(sec_eigs.value[0][144]) == (15,)
-    assert sec_eigs.value[0][9][14].magnitude == approx(1.41810256e-18)
+    assert np.shape(sec_eigs.energies[0][144]) == (15,)
+    assert sec_eigs.energies[0][9][14].magnitude == approx(1.41810256e-18)
     assert sec_eigs.occupations[0][49][9] == 2.0
     sec_dos = sec_scc.dos_electronic[0]
     assert len(sec_dos.energies) == 301

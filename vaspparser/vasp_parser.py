@@ -45,7 +45,7 @@ from nomad.parsing.file_parser.text_parser import TextParser, Quantity
 from nomad.datamodel.metainfo.run.run import Run, Program
 from nomad.datamodel.metainfo.run.method import (
     Method, BasisSet, BasisSetCellDependent, DFT, AtomParameters, MethodReference, XCFunctional,
-    Functional
+    Functional, Electronic
 )
 from nomad.datamodel.metainfo.run.system import (
     System, Atoms, SystemReference
@@ -54,7 +54,8 @@ from nomad.datamodel.metainfo.run.calculation import (
     Calculation, Energy, EnergyEntry, Forces, ForcesEntry, Stress, StressEntry,
     BandEnergies, DosValues, ScfIteration, BandStructure, ElectronicStructureInfo, Dos
 )
-from nomad.datamodel.metainfo.workflow import Workflow, GeometryOptimization
+from nomad.datamodel.metainfo.workflow import (
+    Workflow, GeometryOptimization, SinglePoint, MolecularDynamics)
 
 
 def get_key_values(val_in):
@@ -472,11 +473,10 @@ class OutcarContentParser(ContentParser):
                 element.extend([str(species[n][1])] * ions[n])
                 atomtype.extend([(n + 1)] * ions[n])
             self._atom_info['atoms'] = dict(element=element, atomtype=atomtype)
-
             self._atom_info['atomtypes'] = dict(
-                atomspertype=ions, element=[s[0] for s in species],
+                atomspertype=ions, element=[s[1] for s in species],
                 mass=[m[0] for m in mass_valence], valence=[m[1] for m in mass_valence],
-                pseudopotential=[s[1] for s in species])
+                pseudopotential=[s[0] for s in species])
 
         return self._atom_info
 
@@ -1138,8 +1138,8 @@ class VASPParser(FairdiParser):
             self.logger.warn('Error setting metainfo defintion x_vasp_incar_in', data=dict(
                 incar=incar_parameters))
 
-        sec_method.electronic_structure_method = 'DFT+U' if self.parser.incar.get(
-            'LDAU', False) else 'DFT'
+        sec_method.electronic = Electronic(method='DFT+U' if self.parser.incar.get(
+            'LDAU', False) else 'DFT')
 
         # kpoints
         for key, val in self.parser.kpoints_info.items():
@@ -1194,13 +1194,24 @@ class VASPParser(FairdiParser):
     def parse_workflow(self):
         sec_workflow = self.archive.m_create(Workflow)
 
-        tolerance = self.parser.incar.get('EDIFFG')
-        if tolerance is not None:
-            sec_geometry_opt = sec_workflow.m_create(GeometryOptimization)
-            if tolerance > 0:
-                sec_geometry_opt.input_energy_difference_tolerance = tolerance * ureg.eV
-            else:
-                sec_geometry_opt.input_force_maximum_tolerance = abs(tolerance) * ureg.eV / ureg.angstrom
+        ibrion = -1
+        incar = self.archive.run[-1].method[-1].x_vasp_incar_out
+        if incar is not None:
+            nsw = incar.get('NSW')
+            ibrion = -1 if nsw == 0 else incar.get('IBRION', 0)
+
+        if ibrion == -1:
+            sec_workflow.m_create(SinglePoint)
+        elif ibrion == 0:
+            sec_workflow.m_create(MolecularDynamics)
+        else:
+            task = sec_workflow.m_create(GeometryOptimization)
+            tolerance = self.parser.incar.get('EDIFFG')
+            if tolerance is not None:
+                if tolerance > 0:
+                    task.convergence_tolerance_energy_difference = tolerance * ureg.eV
+                else:
+                    task.convergence_tolerance_force_maximum = abs(tolerance) * ureg.eV / ureg.angstrom
 
     def parse_configurations(self):
         sec_run = self.archive.run[-1]
@@ -1300,14 +1311,14 @@ class VASPParser(FairdiParser):
                 occs = np.transpose(occs, axes=(1, 0, 2, 3))
                 for n in range(n_segments):
                     sec_k_band_segment = sec_k_band.m_create(BandEnergies)
-                    sec_k_band_segment.band_k_points = kpoints[n]
-                    sec_k_band_segment.value = eigs[n]
+                    sec_k_band_segment.kpoints = kpoints[n]
+                    sec_k_band_segment.energies = eigs[n]
                     sec_k_band_segment.occupations = occs[n]
             else:
                 eigs = eigs * ureg.eV
                 sec_eigenvalues = sec_scc.m_create(BandEnergies)
                 sec_eigenvalues.kpoints = kpoints
-                sec_eigenvalues.value = eigs
+                sec_eigenvalues.energies = eigs
                 sec_eigenvalues.occupations = occs
 
         def parse_dos(n_calc):
