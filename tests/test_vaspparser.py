@@ -77,7 +77,7 @@ def test_vasprunxml_static(parser):
     assert np.shape(sec_scc.forces.total.value) == (1, 3)
     assert sec_scc.stress.total.value[2][2].magnitude == approx(-2.78384438e+08)
     assert len(sec_scc.dos_electronic[0].energies) == 5000
-    assert sec_scc.dos_electronic[0].total[0].value[1838].magnitude == approx(1.94581094e+19)
+    assert sec_scc.dos_electronic[0].total[0].value[1838].magnitude == approx(1.94581094e-11)
     assert len(sec_scc.dos_electronic[0].atom_projected) == 9
     assert sec_scc.dos_electronic[0].atom_projected[0].value[-1].magnitude == approx(3.40162245e+17)
     assert np.shape(sec_scc.eigenvalues[0].energies[0][887]) == (37,)
@@ -100,8 +100,8 @@ def test_vasprunxml_relax(parser):
     assert sec_sccs[0].energy.free.value.magnitude == approx(-1.14352735e-18)
     assert np.mean(sec_sccs[1].forces.total.value.magnitude) == 0.0
     assert sec_sccs[2].stress.total.value[2][2].magnitude == approx(-2.02429105e+08)
-    assert sec_sccs[2].energy.lowest_unoccupied[0].magnitude == approx(7.93718304e-19)
-    assert sec_sccs[2].energy.highest_occupied[1].magnitude == approx(7.93702283e-19)
+    assert sec_sccs[2].energy.lowest_unoccupied.magnitude == approx(7.93718304e-19)
+    assert sec_sccs[2].energy.highest_occupied.magnitude == approx(7.93702283e-19)
     assert [len(scc.eigenvalues) for scc in sec_sccs] == [0, 0, 1]
     assert [len(scc.dos_electronic) for scc in sec_sccs] == [0, 0, 1]
 
@@ -176,7 +176,7 @@ def test_outcar(parser):
     assert sec_run.program.version == '5.3.2 13Sep12 complex serial LinuxIFC'
 
     sec_method = sec_run.method[0]
-    assert sec_method.basis_set[0].cell_dependent.planewave_cutoff.magnitude == approx(8.3313185e-17)
+    assert sec_method.basis_set[0].cell_dependent[0].planewave_cutoff.magnitude == approx(8.3313185e-17)
     assert sec_method.dft.xc_functional.exchange[0].name == 'GGA_X_PBE'
     assert len(sec_method.atom_parameters) == 2
     assert sec_method.atom_parameters[1].pseudopotential_name == 'PAW_PBE'
@@ -189,8 +189,8 @@ def test_outcar(parser):
     assert sec_scc.energy.total.value.magnitude == approx(-2.23390885e-18)
     assert sec_scc.forces.total.value[0][0].magnitude == 0.0
     assert sec_scc.stress.total.value[0][0].magnitude == approx(7.060258e+09)
-    assert sec_scc.energy.lowest_unoccupied[0].magnitude == approx(9.40461662e-19)
-    assert sec_scc.energy.highest_occupied[0].magnitude == approx(9.51212268e-19)
+    assert sec_scc.energy.lowest_unoccupied.magnitude == approx(9.40461662e-19)
+    assert sec_scc.energy.highest_occupied.magnitude == approx(9.51212268e-19)
     sec_scfs = sec_scc.scf_iteration
     assert len(sec_scfs) == 11
     assert sec_scfs[4].energy.total.value.magnitude == approx(-1.20437432e-18)

@@ -27,6 +27,9 @@ from vaspparser.metainfo import vasp_incarsOut
 from nomad.datamodel.metainfo import run
 
 
+m_package = Package()
+
+
 class x_vasp_incarUnknown_param(MCategory):
     '''
     Unknown incar parameters.  By 'unknown' we refer to incar parameters in the OLD

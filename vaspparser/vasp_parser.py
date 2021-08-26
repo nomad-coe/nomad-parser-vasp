@@ -45,7 +45,7 @@ from nomad.parsing.file_parser.text_parser import TextParser, Quantity
 from nomad.datamodel.metainfo.run.run import Run, Program
 from nomad.datamodel.metainfo.run.method import (
     Method, BasisSet, BasisSetCellDependent, DFT, AtomParameters, MethodReference, XCFunctional,
-    Functional, Electronic
+    Functional, Electronic, Scf
 )
 from nomad.datamodel.metainfo.run.system import (
     System, Atoms, SystemReference
@@ -1048,8 +1048,8 @@ class RunContentParser(ContentParser):
 
         # unit of dos in vasprun is states/eV/cell
         cell = self.get_structure(n_calc)['cell']
-        volume = np.abs(np.linalg.det(cell.magnitude))
-        dos_values *= volume
+        volume = np.abs(np.linalg.det(cell.magnitude)) * ureg.angstrom ** 3
+        dos_values *= volume.to('m**3').magnitude
 
         e_fermi = self._get_key_values(
             f'{root}/i[@name="efermi"]').get('efermi', 0.0)
@@ -1117,6 +1117,7 @@ class VASPParser(FairdiParser):
 
         prec = 1.3 if 'acc' in self.parser.incar.get('PREC', '') else 1.0
         sec_basis = sec_method.m_create(BasisSet)
+        sec_basis.type = 'plane waves'
         sec_basis_set_cell_dependent = sec_basis.m_create(BasisSetCellDependent)
         sec_basis_set_cell_dependent.kind = 'plane waves'
         sec_basis_set_cell_dependent.planewave_cutoff = self.parser.incar.get(
@@ -1189,7 +1190,7 @@ class VASPParser(FairdiParser):
         # convergence thresholds
         tolerance = self.parser.incar.get('EDIFF')
         if tolerance is not None:
-            sec_method.scf_threshold_energy_change = tolerance * ureg.eV
+            sec_method.scf = Scf(threshold_energy_change=tolerance * ureg.eV)
 
     def parse_workflow(self):
         sec_workflow = self.archive.m_create(Workflow)
@@ -1289,15 +1290,15 @@ class VASPParser(FairdiParser):
                 valence_max.append(np.amin(eigs[i]) - 1.0 if not occupied else max(occupied))
                 unoccupied = [eigs[i, o[0], o[1]] for o in np.argwhere(occs[i] < 0.5)]
                 conduction_min.append(np.amin(eigs[i]) - 1.0 if not unoccupied else min(unoccupied))
-            sec_scc.energy.highest_occupied = valence_max * ureg.eV
-            sec_scc.energy.lowest_unoccupied = conduction_min * ureg.eV
+            sec_scc.energy.highest_occupied = max(valence_max) * ureg.eV
+            sec_scc.energy.lowest_unoccupied = min(conduction_min) * ureg.eV
 
             if self.parser.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
                 # I removed normalization since imho it should be done by normalizer
                 sec_k_band = sec_scc.m_create(BandStructure, Calculation.band_structure_electronic)
                 sec_energies_info = sec_k_band.m_create(ElectronicStructureInfo)
-                sec_energies_info.energy_highest_occupied = valence_max * ureg.eV
-                sec_energies_info.energy_lowest_unoccupied = conduction_min * ureg.eV
+                sec_energies_info.energy_highest_occupied = valence_max[0] * ureg.eV
+                sec_energies_info.energy_lowest_unoccupied = conduction_min[0] * ureg.eV
                 divisions = self.parser.kpoints_info.get('divisions', None)
                 if divisions is None:
                     return
@@ -1422,6 +1423,6 @@ class VASPParser(FairdiParser):
 
         self.parse_method()
 
-        self.parse_workflow()
-
         self.parse_configurations()
+
+        self.parse_workflow()

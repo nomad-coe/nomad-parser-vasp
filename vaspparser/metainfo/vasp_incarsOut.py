@@ -25,6 +25,9 @@ from nomad.metainfo import (  # pylint: disable=unused-import
 from nomad.datamodel.metainfo import run
 
 
+m_package = Package()
+
+
 class x_vasp_incarOut_param(MCategory):
     '''
     Incar parameters. Value stored in incar.
