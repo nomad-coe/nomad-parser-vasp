@@ -22,13 +22,13 @@ from nomad.metainfo import (  # pylint: disable=unused-import
     MSection, MCategory, Category, Package, Quantity, Section, SubSection, SectionProxy,
     Reference, JSON
 )
-from nomad.datamodel.metainfo import run
+from nomad.datamodel.metainfo import simulation
 
 
 m_package = Package()
 
 
-class Run(run.run.Run):
+class Run(simulation.run.Run):
 
     m_def = Section(validate=False, extends_base_section=True)
 
@@ -47,7 +47,7 @@ class Run(run.run.Run):
         ''')
 
 
-class Method(run.method.Method):
+class Method(simulation.method.Method):
 
     m_def = Section(validate=False, extends_base_section=True)
 
@@ -73,7 +73,7 @@ class Method(run.method.Method):
         ''')
 
     x_vasp_atom_kind_refs = Quantity(
-        type=run.method.AtomParameters,
+        type=simulation.method.AtomParameters,
         shape=['number_of_atoms'],
         description='''
         reference to the atom kinds of each atom
@@ -124,7 +124,7 @@ class Method(run.method.Method):
         ''')
 
 
-class System(run.system.System):
+class System(simulation.system.System):
 
     m_def = Section(validate=False, extends_base_section=True)
 

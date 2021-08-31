@@ -24,7 +24,7 @@ from nomad.metainfo import (  # pylint: disable=unused-import
 )
 from vaspparser.metainfo import vasp_incars
 from vaspparser.metainfo import vasp_incarsOut
-from nomad.datamodel.metainfo import run
+from nomad.datamodel.metainfo import simulation
 
 
 m_package = Package()
@@ -40,7 +40,7 @@ class x_vasp_incarUnknown_param(MCategory):
     m_def = Category()
 
 
-class Method(run.method.Method):
+class Method(simulation.method.Method):
 
     m_def = Section(validate=False, extends_base_section=True)
 

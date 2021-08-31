@@ -42,17 +42,17 @@ from nomad.units import ureg
 from nomad.parsing import FairdiParser
 from nomad.parsing.file_parser import FileParser
 from nomad.parsing.file_parser.text_parser import TextParser, Quantity
-from nomad.datamodel.metainfo.run.run import Run, Program
-from nomad.datamodel.metainfo.run.method import (
-    Method, BasisSet, BasisSetCellDependent, DFT, AtomParameters, MethodReference, XCFunctional,
+from nomad.datamodel.metainfo.simulation.run import Run, Program
+from nomad.datamodel.metainfo.simulation.method import (
+    Method, BasisSet, BasisSetCellDependent, DFT, AtomParameters, XCFunctional,
     Functional, Electronic, Scf
 )
-from nomad.datamodel.metainfo.run.system import (
-    System, Atoms, SystemReference
+from nomad.datamodel.metainfo.simulation.system import (
+    System, Atoms
 )
-from nomad.datamodel.metainfo.run.calculation import (
+from nomad.datamodel.metainfo.simulation.calculation import (
     Calculation, Energy, EnergyEntry, Forces, ForcesEntry, Stress, StressEntry,
-    BandEnergies, DosValues, ScfIteration, BandStructure, ElectronicStructureInfo, Dos
+    BandEnergies, DosValues, ScfIteration, BandStructure, ChannelInfo, Dos
 )
 from nomad.datamodel.metainfo.workflow import (
     Workflow, GeometryOptimization, SinglePoint, MolecularDynamics)
@@ -112,7 +112,7 @@ class ContentParser:
             'XCdc': 'energy_XC', 'forces': 'atom_forces', 'stress': 'stress_tensor',
             'energy_total': 'energy_free', 'energy_T0': 'energy_total_T0',
             'energy_entropy0': 'energy_total', 'DENC': 'energy_correction_hartree',
-            'EXHF': 'energy_exchange', 'EBANDS': 'energy_sum_eigenvalues'}
+            'EXHF': 'energy_exchange', 'EBANDS': 'energy_sum_eigenvalues', 'efermi': 'fermi'}
 
         self.xc_functional_mapping = {
             '91': ['GGA_X_PW91', 'GGA_C_PW91'], 'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
@@ -1296,9 +1296,10 @@ class VASPParser(FairdiParser):
             if self.parser.kpoints_info.get('x_vasp_k_points_generation_method', None) == 'listgenerated':
                 # I removed normalization since imho it should be done by normalizer
                 sec_k_band = sec_scc.m_create(BandStructure, Calculation.band_structure_electronic)
-                sec_energies_info = sec_k_band.m_create(ElectronicStructureInfo)
-                sec_energies_info.energy_highest_occupied = valence_max[0] * ureg.eV
-                sec_energies_info.energy_lowest_unoccupied = conduction_min[0] * ureg.eV
+                for n in range(len(eigs)):
+                    sec_energies_info = sec_k_band.m_create(ChannelInfo)
+                    sec_energies_info.energy_highest_occupied = valence_max[n] * ureg.eV
+                    sec_energies_info.energy_lowest_unoccupied = conduction_min[n] * ureg.eV
                 divisions = self.parser.kpoints_info.get('divisions', None)
                 if divisions is None:
                     return
@@ -1323,7 +1324,7 @@ class VASPParser(FairdiParser):
                 sec_eigenvalues.occupations = occs
 
         def parse_dos(n_calc):
-            energies, values, integrated, _ = self.parser.get_total_dos(n_calc)
+            energies, values, integrated, efermi = self.parser.get_total_dos(n_calc)
 
             # TODO: I do not know how the f-orbitals are arranged
             lm_converter = {
@@ -1356,6 +1357,9 @@ class VASPParser(FairdiParser):
                                 sec_dos_values.atom_index = atom
                                 sec_dos_values.value = dos[lm][spin][atom] / ureg.eV
 
+            if efermi is not None:
+                sec_run.calculation[-1].energy.fermi = efermi * ureg.eV
+
         for n in range(self.parser.n_calculations):
             # energies
             sec_scc = parse_energy(n, None)
@@ -1378,8 +1382,8 @@ class VASPParser(FairdiParser):
 
             # structure
             sec_system = parse_system(n)
-            sec_scc.system_ref.append(SystemReference(value=sec_system))
-            sec_scc.method_ref.append(MethodReference(value=sec_run.method[-1]))
+            sec_scc.system_ref = sec_system
+            sec_scc.method_ref = sec_run.method[-1]
 
             # eigenvalues
             parse_eigenvalues(n)
