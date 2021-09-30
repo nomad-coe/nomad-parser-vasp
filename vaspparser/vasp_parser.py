@@ -114,10 +114,24 @@ class ContentParser:
             'energy_entropy0': 'energy_total', 'DENC': 'energy_correction_hartree',
             'EXHF': 'energy_exchange', 'EBANDS': 'energy_sum_eigenvalues', 'efermi': 'fermi'}
 
+        # TODO 1. verify list most probably incomplete, 2. it appears that there is no
+        # single parameter for hybrid functionals so it is difficult to determine, 3. not
+        # sure about --, I thought it is lda exchange only.
         self.xc_functional_mapping = {
             '91': ['GGA_X_PW91', 'GGA_C_PW91'], 'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
+            'AM': ['GGA_X_AM05', 'GGA_C_AM05'], 'HL': ['LDA_C_HL'],
+            'PZ': ['LDA_C_PZ'], 'WI': ['LDA_C_WIGNER'],
+            'RE': ['GGA_X_PBE_R'], 'VW': ['LDA_C_VWN'], 'B3': ['HYB_GGA_XC_B3LYP3'],
+            'B5': ['HYB_GGA_XC_B3LYP5'], 'BF': ['GGA_X_BEEFVDW', 'GGA_XC_BEEFVDW'],
+            'CO': [], 'OR': ['GGA_X_OPTPBE_VDW'],
+            'BO': ['GGA_X_OPTB88_VDW'], 'RA': ['LDA_C_PW_RPA'],
             'RP': ['GGA_X_RPBE', 'GGA_C_PBE'], 'PS': ['GGA_C_PBE_SOL', 'GGA_X_PBE_SOL'],
-            'MK': ['GGA_X_OPTB86_VDW'], '--': ['GGA_X_PBE', 'GGA_C_PBE']}
+            'MK': ['GGA_X_OPTB86_VDW'], '--': ['GGA_X_PBE', 'GGA_C_PBE'],
+            'TPSS': ['MGGA_X_TPSS', 'MGGA_C_TPSS'], 'RTPSS': ['MGGA_X_RTPSS'],
+            'M06L': ['MGGA_C_M06_L'], 'MBJ': ['MGGA_X_BJ06'], 'MS0': ['MGGA_X_MS0'],
+            'MS1': ['MGGA_X_MS1'], 'MS2': ['MGGA_X_MS2'],
+            'RSCAN': ['MGGA_X_RSCAN', 'MGGA_C_RSCAN'], 'SCAN': ['MGGA_X_SCAN'],
+            'R2SCAN': ['MGGA_X_R2SCAN', 'MGGA_C_R2SCAN']}
 
     def init_parser(self, filepath, logger):
         self.parser.mainfile = filepath
@@ -1173,19 +1187,18 @@ class VASPParser(FairdiParser):
 
         self.parse_incarsout()
 
-        gga = self.parser.incar.get('GGA', None)
         sec_xc_functional = sec_dft.m_create(XCFunctional)
-        if gga is not None:
-            xc_functionals = self.parser.xc_functional_mapping.get(gga, [])
-            for xc_functional in xc_functionals:
-                if '_X_' in xc_functional or xc_functional.endswith('_X'):
-                    sec_xc_functional.exchange.append(Functional(name=xc_functional))
-                elif '_C_' in xc_functional or xc_functional.endswith('_C'):
-                    sec_xc_functional.correlation.append(Functional(name=xc_functional))
-                elif 'HYB' in xc_functional:
-                    sec_xc_functional.hybrid.append(Functional(name=xc_functional))
-                else:
-                    sec_xc_functional.contributions.append(Functional(name=xc_functional))
+        xc_functionals = self.parser.xc_functional_mapping.get(self.parser.incar.get('GGA'), [])
+        xc_functionals.extend(self.parser.xc_functional_mapping.get(self.parser.incar.get('METAGGA'), []))
+        for xc_functional in xc_functionals:
+            if '_X_' in xc_functional or xc_functional.endswith('_X'):
+                sec_xc_functional.exchange.append(Functional(name=xc_functional))
+            elif '_C_' in xc_functional or xc_functional.endswith('_C'):
+                sec_xc_functional.correlation.append(Functional(name=xc_functional))
+            elif 'HYB' in xc_functional:
+                sec_xc_functional.hybrid.append(Functional(name=xc_functional))
+            else:
+                sec_xc_functional.contributions.append(Functional(name=xc_functional))
 
         # convergence thresholds
         tolerance = self.parser.incar.get('EDIFF')
