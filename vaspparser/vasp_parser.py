@@ -52,7 +52,7 @@ from nomad.datamodel.metainfo.simulation.system import (
 )
 from nomad.datamodel.metainfo.simulation.calculation import (
     Calculation, Energy, EnergyEntry, Forces, ForcesEntry, Stress, StressEntry,
-    BandEnergies, DosValues, ScfIteration, BandStructure, ChannelInfo, Dos
+    BandEnergies, DosValues, ScfIteration, BandStructure, BandGap, Dos
 )
 from nomad.datamodel.metainfo.workflow import (
     Workflow, GeometryOptimization, SinglePoint, MolecularDynamics)
@@ -1310,9 +1310,9 @@ class VASPParser(FairdiParser):
                 # I removed normalization since imho it should be done by normalizer
                 sec_k_band = sec_scc.m_create(BandStructure, Calculation.band_structure_electronic)
                 for n in range(len(eigs)):
-                    sec_energies_info = sec_k_band.m_create(ChannelInfo)
-                    sec_energies_info.energy_highest_occupied = valence_max[n] * ureg.eV
-                    sec_energies_info.energy_lowest_unoccupied = conduction_min[n] * ureg.eV
+                    sec_band_gap = sec_k_band.m_create(BandGap)
+                    sec_band_gap.energy_highest_occupied = valence_max[n] * ureg.eV
+                    sec_band_gap.energy_lowest_unoccupied = conduction_min[n] * ureg.eV
                 divisions = self.parser.kpoints_info.get('divisions', None)
                 if divisions is None:
                     return
@@ -1351,6 +1351,7 @@ class VASPParser(FairdiParser):
                 sec_scc = sec_run.calculation[-1]
                 sec_dos = sec_scc.m_create(Dos, Calculation.dos_electronic)
                 sec_dos.energies = energies * ureg.eV
+                sec_dos.energy_fermi = efermi * ureg.eV
 
                 for spin in range(len(values)):
                     sec_dos_values = sec_dos.m_create(DosValues, Dos.total)
