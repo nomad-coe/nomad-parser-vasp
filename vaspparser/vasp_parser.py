@@ -1197,7 +1197,6 @@ class VASPParser(FairdiParser):
             aldac = self.parser.incar.get('ALDAC', 1.0)
             hfscreen = self.parser.incar.get('HFSCREEN', 0.0)
 
-            xc_functionals = []
             if hfscreen == 0.2:
                 sec_xc_functional.hybrid.append(Functional(name='HYB_GGA_XC_HSE06'))
             elif hfscreen == 0.3:
@@ -1212,7 +1211,6 @@ class VASPParser(FairdiParser):
                 sec_xc_functional.hybrid.append(Functional(
                     name='HYB_GGA_XC_%s' % gga, parameters=dict(
                         aexx=aexx, aggax=aggax, aggac=aggac, aldac=aldac)))
-            return xc_functionals
 
         else:
             metagga = self.parser.incar.get('METAGGA')
