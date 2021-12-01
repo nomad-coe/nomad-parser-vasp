@@ -106,8 +106,20 @@ class ContentParser:
 
         self.xc_functional_mapping = {
             '91': ['GGA_X_PW91', 'GGA_C_PW91'], 'PE': ['GGA_X_PBE', 'GGA_C_PBE'],
+            'AM': ['GGA_X_AM05', 'GGA_C_AM05'], 'HL': ['LDA_C_HL'],
+            'PZ': ['LDA_C_PZ'], 'WI': ['LDA_C_WIGNER'],
+            'RE': ['GGA_X_PBE_R'], 'VW': ['LDA_C_VWN'], 'B3': ['HYB_GGA_XC_B3LYP3'],
+            'B5': ['HYB_GGA_XC_B3LYP5'], 'BF': ['GGA_X_BEEFVDW', 'GGA_XC_BEEFVDW'],
+            'CO': [], 'OR': ['GGA_X_OPTPBE_VDW'],
+            'BO': ['GGA_X_OPTB88_VDW'], 'RA': ['LDA_C_PW_RPA'],
             'RP': ['GGA_X_RPBE', 'GGA_C_PBE'], 'PS': ['GGA_C_PBE_SOL', 'GGA_X_PBE_SOL'],
-            'MK': ['GGA_X_OPTB86_VDW'], '--': ['GGA_X_PBE', 'GGA_C_PBE']}
+            'MK': ['GGA_X_OPTB86_VDW'], '--': ['GGA_X_PBE', 'GGA_C_PBE'],
+            'TPSS': ['MGGA_X_TPSS', 'MGGA_C_TPSS'], 'RTPSS': ['MGGA_X_RTPSS'],
+            'M06L': ['MGGA_C_M06_L'], 'MBJ': ['MGGA_X_BJ06'], 'MS0': ['MGGA_X_MS0'],
+            'MS1': ['MGGA_X_MS1'], 'MS2': ['MGGA_X_MS2'],
+            'RSCAN': ['MGGA_X_RSCAN', 'MGGA_C_RSCAN'], 'SCAN': ['MGGA_X_SCAN'],
+            'R2SCAN': ['MGGA_X_R2SCAN', 'MGGA_C_R2SCAN'],
+            'HLE17': ['MGGA_XC_HLE17']}
 
     def init_parser(self, filepath, logger):
         self.parser.mainfile = filepath
@@ -1163,9 +1175,36 @@ class VASPParser(FairdiParser):
 
         self.parse_incarsout()
 
-        gga = self.parser.incar.get('GGA', None)
-        if gga is not None:
-            xc_functionals = self.parser.xc_functional_mapping.get(gga, [])
+        if self.parser.incar.get('LHFCALC', False):
+            gga = self.parser.incar.get('GGA', 'PE')
+            aexx = self.parser.incar.get('AEXX', 0.0)
+            aggax = self.parser.incar.get('AGGAX', 1.0)
+            aggac = self.parser.incar.get('AGGAC', 1.0)
+            aldac = self.parser.incar.get('ALDAC', 1.0)
+            hfscreen = self.parser.incar.get('HFSCREEN', 0.0)
+
+            sec_xc_functional = sec_method.m_create(XCFunctionals)
+            if hfscreen == 0.2:
+                sec_xc_functional.XC_functional_name = 'HYB_GGA_XC_HSE06'
+            elif hfscreen == 0.3:
+                sec_xc_functional.XC_functional_name = 'HYB_GGA_XC_HSE03'
+            elif gga == 'B3' and aexx == 0.2 and aggax == 0.72 and aggac == 0.81 and aldac == 0.19:
+                sec_xc_functional.XC_functional_name = 'HYB_GGA_XC_B3LYP3'
+            elif aexx == 1.0 and aldac == 0.0 and aggac == 0.0:
+                sec_xc_functional.XC_functional_name = 'X_HF'
+            elif gga == 'PE':
+                sec_xc_functional.XC_functional_name = 'HYB_GGA_XC_PBEH'
+            else:
+                sec_xc_functional.XC_functional_name = 'HYB_GGA_XC_%s' % gga
+                sec_xc_functional.XC_functional_parameters = dict(
+                    aexx=aexx, aggax=aggax, aggac=aggac, aldac=aldac)
+
+        else:
+            metagga = self.parser.incar.get('METAGGA')
+            if metagga:
+                xc_functionals = self.parser.xc_functional_mapping.get(metagga, [metagga])
+            else:
+                xc_functionals = self.parser.xc_functional_mapping.get(self.parser.incar.get('GGA'), [])
             for xc_functional in xc_functionals:
                 sec_xc_functional = sec_method.m_create(XCFunctionals)
                 sec_xc_functional.XC_functional_name = xc_functional

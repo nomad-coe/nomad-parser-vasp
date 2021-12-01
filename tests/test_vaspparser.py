@@ -210,3 +210,19 @@ def test_outcar(parser):
 def test_broken_xml(parser):
     archive = EntryArchive()
     parser.parse('tests/data/vasprun.xml.broken', archive, None)
+
+
+def test_hybrid(parser):
+    archive = EntryArchive()
+    parser.parse('tests/data/hybrid_vasprun.xml.gz', archive, None)
+
+    sec_xc_functional = archive.section_run[-1].section_method[-1].section_XC_functionals[0]
+    assert sec_xc_functional.XC_functional_name == 'HYB_GGA_XC_HSE06'
+
+
+def test_metagga(parser):
+    archive = EntryArchive()
+    parser.parse('tests/data/hle17_vasprun.xml.gz', archive, None)
+
+    sec_xc_functional = archive.section_run[-1].section_method[-1].section_XC_functionals[0]
+    assert sec_xc_functional.XC_functional_name == 'MGGA_XC_HLE17'
