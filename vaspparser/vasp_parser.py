@@ -131,7 +131,8 @@ class ContentParser:
             'M06L': ['MGGA_C_M06_L'], 'MBJ': ['MGGA_X_BJ06'], 'MS0': ['MGGA_X_MS0'],
             'MS1': ['MGGA_X_MS1'], 'MS2': ['MGGA_X_MS2'],
             'RSCAN': ['MGGA_X_RSCAN', 'MGGA_C_RSCAN'], 'SCAN': ['MGGA_X_SCAN'],
-            'R2SCAN': ['MGGA_X_R2SCAN', 'MGGA_C_R2SCAN']}
+            'R2SCAN': ['MGGA_X_R2SCAN', 'MGGA_C_R2SCAN'],
+            'HLE17': ['MGGA_XC_HLE17']}
 
     def init_parser(self, filepath, logger):
         self.parser.mainfile = filepath
@@ -1188,17 +1189,46 @@ class VASPParser(FairdiParser):
         self.parse_incarsout()
 
         sec_xc_functional = sec_dft.m_create(XCFunctional)
-        xc_functionals = self.parser.xc_functional_mapping.get(self.parser.incar.get('GGA'), [])
-        xc_functionals.extend(self.parser.xc_functional_mapping.get(self.parser.incar.get('METAGGA'), []))
-        for xc_functional in xc_functionals:
-            if '_X_' in xc_functional or xc_functional.endswith('_X'):
-                sec_xc_functional.exchange.append(Functional(name=xc_functional))
-            elif '_C_' in xc_functional or xc_functional.endswith('_C'):
-                sec_xc_functional.correlation.append(Functional(name=xc_functional))
-            elif 'HYB' in xc_functional:
-                sec_xc_functional.hybrid.append(Functional(name=xc_functional))
+        if self.parser.incar.get('LHFCALC', False):
+            gga = self.parser.incar.get('GGA', 'PE')
+            aexx = self.parser.incar.get('AEXX', 0.0)
+            aggax = self.parser.incar.get('AGGAX', 1.0)
+            aggac = self.parser.incar.get('AGGAC', 1.0)
+            aldac = self.parser.incar.get('ALDAC', 1.0)
+            hfscreen = self.parser.incar.get('HFSCREEN', 0.0)
+
+            xc_functionals = []
+            if hfscreen == 0.2:
+                sec_xc_functional.hybrid.append(Functional(name='HYB_GGA_XC_HSE06'))
+            elif hfscreen == 0.3:
+                sec_xc_functional.hybrid.append(Functional(name='HYB_GGA_XC_HSE03'))
+            elif gga == 'B3' and aexx == 0.2 and aggax == 0.72 and aggac == 0.81 and aldac == 0.19:
+                sec_xc_functional.hybrid.append(Functional(name='HYB_GGA_XC_B3LYP3'))
+            elif aexx == 1.0 and aldac == 0.0 and aggac == 0.0:
+                sec_xc_functional.contributions.append(Functional(name='X_HF'))
+            elif gga == 'PE':
+                sec_xc_functional.hybrid.append(Functional(name='HYB_GGA_XC_PBEH'))
             else:
-                sec_xc_functional.contributions.append(Functional(name=xc_functional))
+                sec_xc_functional.hybrid.append(Functional(
+                    name='HYB_GGA_XC_%s' % gga, parameters=dict(
+                        aexx=aexx, aggax=aggax, aggac=aggac, aldac=aldac)))
+            return xc_functionals
+
+        else:
+            metagga = self.parser.incar.get('METAGGA')
+            if metagga:
+                xc_functionals = self.parser.xc_functional_mapping.get(metagga, [metagga])
+            else:
+                xc_functionals = self.parser.xc_functional_mapping.get(self.parser.incar.get('GGA'), [])
+            for xc_functional in xc_functionals:
+                if '_X_' in xc_functional or xc_functional.endswith('_X'):
+                    sec_xc_functional.exchange.append(Functional(name=xc_functional))
+                elif '_C_' in xc_functional or xc_functional.endswith('_C'):
+                    sec_xc_functional.correlation.append(Functional(name=xc_functional))
+                elif 'HYB' in xc_functional:
+                    sec_xc_functional.hybrid.append(Functional(name=xc_functional))
+                else:
+                    sec_xc_functional.contributions.append(Functional(name=xc_functional))
 
         # convergence thresholds
         tolerance = self.parser.incar.get('EDIFF')
