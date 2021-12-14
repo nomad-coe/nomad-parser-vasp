@@ -961,6 +961,9 @@ class RunContentParser(ContentParser):
                 fields = self._get_key_values(
                     f'{root}/array[@name="%s"]/field' % key, repeats=True).get('field', [])
                 array_info = {}
+                if len(rcs) != len(fields) * number[key]:
+                    self._atom_info = array_info
+                    continue
                 for n in range(number[key]):
                     for i in range(len(fields)):
                         array_info.setdefault(fields[i], [])
@@ -1106,14 +1109,14 @@ class VASPParser(FairdiParser):
                 r'?\s*<modeling>'
                 r'?\s*<generator>'
                 r'?\s*<i name="program" type="string">\s*vasp\s*</i>'
-                r'?|^\svasp[\.\d]+.+?\s*(?:\(build|complex)'),
+                r'?|^\svasp[\.\d]+.+?(?:\(build|complex).*\s*executed on'),
             supported_compressions=['gz', 'bz2', 'xz'], mainfile_alternative=True)
 
         self._vasprun_parser = RunContentParser()
         self._outcar_parser = OutcarContentParser()
 
     def init_parser(self, filepath, logger):
-        self.parser = self._outcar_parser if 'OUTCAR' in filepath else self._vasprun_parser
+        self.parser = self._vasprun_parser if '.xml' in filepath else self._outcar_parser
         self.parser.init_parser(filepath, logger)
 
     def parse_incarsout(self):
