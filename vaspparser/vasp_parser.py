@@ -229,6 +229,13 @@ class OutcarTextParser(TextParser):
                     positions.append(position.groups())
             return np.array(positions, dtype=float)
 
+        def str_to_mass_valence(val_in):
+            mass_valence = [v.strip() for v in val_in.split('\n')]
+            for n, values in enumerate(mass_valence):
+                mass_valence[n] = [float(values[i - 6:i]) for i in range(len(values), 2, -6)]
+                mass_valence[n].reverse()
+            return [(mass_valence[0][i], mass_valence[1][i]) for i in range(len(mass_valence[0]))]
+
         scf_iteration = [
             Quantity(
                 'energy_total', r'free energy\s*TOTEN\s*=\s*([\d\.\-]+)\s*eV',
@@ -315,8 +322,13 @@ class OutcarTextParser(TextParser):
             Quantity(
                 'species', r'TITEL\s*=\s*(\w+) ([A-Z][a-z]*)', dtype=str, repeats=True),
             Quantity(
+                'species', r'\n *(.+?) +:\s+energy of atom  +\d+', dtype=str, repeats=True),
+            Quantity(
                 'mass_valence', r'POMASS\s*=\s*([\d\.]+);\s*ZVAL\s*=\s*([\d\.]+)\s*mass and valenz',
                 dtype=float, repeats=True),
+            Quantity(
+                'mass_valence', r'POMASS +(=[\d\. ]+\s+)Ionic Valenz\s+ZVAL +(=[\d\. ]+)',
+                str_operation=str_to_mass_valence),
             Quantity(
                 'kpoints',
                 r'k-points in reciprocal lattice and weights:[\s\S]+?\n([\d\.\s\-]+)',
@@ -467,13 +479,14 @@ class OutcarContentParser(ContentParser):
                     self.parser.mainfile).strip('OUTCAR'))
                 path = path if os.path.isfile(path) else os.path.join(
                     self.parser.maindir, 'POSCAR')
-                with open(path) as f:
-                    for _ in range(7):
-                        line = f.readline()
-                        try:
-                            ions = [int(n) for n in line.split()]
-                        except Exception:
-                            pass
+                if os.path.isfile(path):
+                    with open(path) as f:
+                        for _ in range(7):
+                            line = f.readline()
+                            try:
+                                ions = [int(n) for n in line.split()]
+                            except Exception:
+                                pass
             ions = [i for i in ions if not isinstance(i, str)]
             if len(ions) != len(species):
                 self.parser.logger.error('Inconsistent number of ions and species.')
@@ -820,7 +833,10 @@ class RunContentParser(ContentParser):
                 for item in data if item[0]]
             value = [d[0] if len(d) == 1 and not repeats else d for d in value]
             dtype = data[0][2]
-            result[base_name] = np.array(value, dtype=self._dtypes.get(dtype, float))
+            try:
+                result[base_name] = np.array(value, dtype=self._dtypes.get(dtype, float))
+            except Exception:
+                self.parser.logger.error('Error parsing array.')
 
         else:
             for value, name, dtype in data:
@@ -1053,8 +1069,15 @@ class RunContentParser(ContentParser):
         if dos is None:
             return dos_energies, dos_values, dos_integrated, e_fermi
 
+        e_fermi = self._get_key_values(
+            f'{root}/i[@name="efermi"]').get('efermi', 0.0)
+        n_dos = 1 if isinstance(e_fermi, float) else len(e_fermi)
+        if n_dos > 1:
+            e_fermi = e_fermi[-1]
+            self.parser.logger.warn('Multiple dos found, will read only last.')
+
         try:
-            dos = np.reshape(dos, (self.ispin, len(dos) // self.ispin, 3))
+            dos = np.reshape(dos, (n_dos, self.ispin, len(dos) // self.ispin // n_dos, 3))[-1]
         except Exception:
             self.parser.logger.error('Error reading total dos.')
             return dos_energies, dos_values, dos_integrated, e_fermi
@@ -1068,9 +1091,6 @@ class RunContentParser(ContentParser):
         cell = self.get_structure(n_calc)['cell']
         volume = np.abs(np.linalg.det(cell.magnitude)) * ureg.angstrom ** 3
         dos_values *= volume.to('m**3').magnitude
-
-        e_fermi = self._get_key_values(
-            f'{root}/i[@name="efermi"]').get('efermi', 0.0)
 
         return dos_energies, dos_values, dos_integrated, e_fermi
 
@@ -1109,7 +1129,7 @@ class VASPParser(FairdiParser):
                 r'?\s*<modeling>'
                 r'?\s*<generator>'
                 r'?\s*<i name="program" type="string">\s*vasp\s*</i>'
-                r'?|^\svasp[\.\d]+.+?(?:\(build|complex).*\s*executed on'),
+                r'?|^\svasp[\.\d]+.+?(?:\(build|complex)[\s\S]+?executed on'),
             supported_compressions=['gz', 'bz2', 'xz'], mainfile_alternative=True)
 
         self._vasprun_parser = RunContentParser()
@@ -1301,9 +1321,8 @@ class VASPParser(FairdiParser):
                 if val is None or metainfo_key is None:
                     continue
 
-                val = val * ureg.eV
-
                 try:
+                    val = val * ureg.eV
                     if metainfo_key.startswith('energy_'):
                         sec_energy.m_add_sub_section(getattr(
                             Energy, metainfo_key.replace('energy_', '').lower()), EnergyEntry(value=val))
@@ -1453,6 +1472,7 @@ class VASPParser(FairdiParser):
         sec_run = self.archive.m_create(Run)
         program_name = self.parser.header.get('program', '')
         if program_name.strip().upper() != 'VASP':
+            sec_run.program = Program()
             self.logger.error('invalid program name', data=dict(program_name=program_name))
             return
         sec_run.program = Program(name='VASP')
