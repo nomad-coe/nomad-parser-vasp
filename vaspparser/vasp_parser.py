@@ -322,7 +322,7 @@ class OutcarTextParser(TextParser):
             Quantity(
                 'species', r'TITEL\s*=\s*(\w+) ([A-Z][a-z]*)', dtype=str, repeats=True),
             Quantity(
-                'species', r'\n *(.+?) +:\s+energy of atom  +\d+', dtype=str, repeats=True),
+                'species', r'\n *(\w+) +([A-Z][a-z]*).+?:\s*energy of atom +\d+', dtype=str, repeats=True),
             Quantity(
                 'mass_valence', r'POMASS\s*=\s*([\d\.]+);\s*ZVAL\s*=\s*([\d\.]+)\s*mass and valenz',
                 dtype=float, repeats=True),
