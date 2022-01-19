@@ -61,7 +61,7 @@ from nomad.datamodel.metainfo.workflow import (
 def get_key_values(val_in):
     val = [v for v in val_in.split('\n') if '=' in v]
     data = {}
-    pattern = re.compile(r'([A-Z_]+)\s*=\s*([\w\-]+\s{0,3}[\d\. ]*[E\-\d]*)')
+    pattern = re.compile(r'([A-Z_]+)\s*=\s*([\w\-]+\s{0,3}[\d\. ]*[E\-\+\d]*)')
 
     def convert(v):
         if isinstance(v, list):
