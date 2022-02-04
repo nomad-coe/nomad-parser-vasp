@@ -1266,10 +1266,13 @@ class VASPParser(FairdiParser):
             ibrion = -1 if nsw == 0 else incar.get('IBRION', 0)
 
         if ibrion == -1:
+            sec_workflow.type = 'single_point'
             sec_workflow.m_create(SinglePoint)
         elif ibrion == 0:
+            sec_workflow.type = 'molecular_dynamics'
             sec_workflow.m_create(MolecularDynamics)
         else:
+            sec_workflow.type = 'geometry_optimization'
             task = sec_workflow.m_create(GeometryOptimization)
             tolerance = self.parser.incar.get('EDIFFG')
             if tolerance is not None:
